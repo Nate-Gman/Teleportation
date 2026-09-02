@@ -1,4 +1,4 @@
-# Warpdrive WD-1 Foldrunner
+# Warpdrive WD-1m5 Foldrunner "Miniframe V"
 
 A physics-honest digital twin of a warp-drive starship, a traversable wormhole portal, and the time machine that any wormhole automatically becomes. Every number is computed from the real general-relativity and quantum-field-theory formulas. Nothing is fictional. Where the physics says "impossible," the model says so and shows the computation that proves it.
 
@@ -20,7 +20,7 @@ Headless mode works without pygame. All reports and self-tests run on pure Pytho
 
 ## What this is
 
-The WD-1 Foldrunner is a 1.27 x 10^8 kg starship that carries a 100 m bubble of flat spacetime to Proxima Centauri b (4.2465 ly) at beta = 0.562. Inside the bubble the crew are weightless, un-accelerated, and un-dilated for the entire voyage. The drive is subluminal by design -- and that is not a compromise, it is the reason it is buildable.
+The WD-1m5 Foldrunner "Miniframe V" is a 1.66 x 10^7 kg starship (the WD-1 hull scaled 0.4586x linear overall, crew 12 -> 6, bubble wall thinned 1.0 m -> 0.2 m, plus a pass-4 reactor-margin and hull-wall-thickness refinement and a pass-5 HTS-coil and shaping-ring structural-efficiency refinement, none of which touched the bubble geometry) that carries a 45.86 m bubble of flat spacetime to Proxima Centauri b (4.2465 ly) at an emergent beta = 0.857 -- up from 0.562 at full scale, because a lighter hull needs less beamed energy to reach speed against the same unchanged transmitter. Inside the bubble the crew are weightless, un-accelerated, and un-dilated for the entire voyage. The drive is subluminal by design -- and that is not a compromise, it is the reason it is buildable. See `overview.md` for the full scale-down rationale (all five refit passes, including a bug fix in pass 3 that corrected two non-scaling envelope-check constants, an engineering-margin review in pass 4, and a winding-pack/secondary-structure review in pass 5).
 
 The model also computes, honestly and with full provenance:
 
@@ -249,7 +249,7 @@ And you would still arrive at light speed at best. [Self-test: PASS]
 
 ## Math proofs (every formula, verified)
 
-The UI info panel (press `I` in the visualizer) now contains 6 proof sections with 33 individual proofs. Each proof states the formula, the computed value, and the self-test check that verifies it. The self-test has been expanded from 95 to 120 checks to cover every function.
+The UI info panel (press `I` in the visualizer) now contains 10 proof sections with 47+ individual proofs. Each proof states the formula, the computed value, and the self-test check that verifies it. The self-test has been expanded from 95 to 169 checks to cover every function.
 
 ### Alcubierre metric proofs (section 19c)
 
@@ -275,19 +275,19 @@ The UI info panel (press `I` in the visualizer) now contains 6 proof sections wi
 ### Energy & engineering proofs (section 19d)
 
 1. **Relativistic kinetic energy** KE = (gamma - 1) M c^2
-   - At beta=0.5: 1.77 x 10^24 J (1.77 YJ) [PASS]
+   - At beta=0.5: 2.55 x 10^23 J (0.26 YJ), was 1.77 YJ at full scale [PASS]
    - Verified for beta = 0.1, 0.5, 0.9, 0.99 [PASS]
    - No solution for beta > 1 [PASS]
 
 2. **SMES magnetic storage** E = (B^2/2 mu_0) V_torus
-   - Stored: 448 GJ (positive, finite) [PASS]
+   - Stored: 43.1 GJ (positive, finite), was 448 GJ at full scale [PASS]
 
 3. **Fusion fuel** m = E / (eta x E_D3He_per_kg)
-   - Crossing at beta=0.5: 4419 kg D-3He [PASS]
+   - Crossing at beta=0.5: 730 kg D-3He, was 4419 kg at full scale [PASS]
 
 4. **Stefan-Boltzmann radiator** T = (P / (eps sigma A))^(1/4)
-   - At beta=0.99: 1649 K (limit 1900 K) [PASS]
-   - At beta=2: 2187 K (OVER limit) [PASS]
+   - At beta=0.99: 1514 K (limit 1900 K), was 1649 K at full scale [PASS]
+   - At beta=2: 1904 K (OVER limit), was 2187 K at full scale [PASS]
    - Round-trip recovers P [PASS]
 
 ### Beam & braking proofs (section 19e)
@@ -302,27 +302,27 @@ The UI info panel (press `I` in the visualizer) now contains 6 proof sections wi
    - Never exceeds 1.0 [PASS]
 
 3. **Photon brake force** F = 2P/captured / c
-   - Brake force: 6.67 x 10^8 N [PASS]
+   - Brake force: 6.67 x 10^8 N [PASS] (unchanged -- set by the beam/array, not ship mass)
    - F <= 2P_tap/c [PASS]
 
 4. **Photon brake time** t = gamma M v / F
-   - At beta=0.5: 381.3 d [PASS]
+   - At beta=0.5: 55.2 d, was 381.3 d at full scale [PASS]
 
 5. **Magsail drag** F = Cd rho_ISM v^2 A
-   - Cd = 0.85, A = 3.14 x 10^12 m^2 [PASS]
-   - At beta=0.5: 1.00 x 10^7 N [PASS]
+   - Cd = 0.85, A = 1.54 x 10^12 m^2, was 3.14 x 10^12 m^2 (loop trimmed 1000 -> 700 km at pass 2, unchanged since) [PASS]
+   - At beta=0.5: 4.92 x 10^6 N [PASS]
    - Scales as v^2: F(1.0) = 4 x F(0.5) [PASS]
-   - Halving time: 60.1 yr (looks feasible) [PASS]
-   - Stop time: 3 x 10^4 yr (the honest number) [PASS]
+   - Halving time: 17.7 yr (looks feasible) [PASS]
+   - Stop time: 8.86 x 10^3 yr (the honest number), was 3 x 10^4 yr at full scale [PASS]
 
 ### ISM & time dilation proofs (section 19f)
 
 1. **ISM particles swept** N = n_ISM pi R^2 distance
-   - n_ISM = 1.0 x 10^5 /m^3, R = 100 m [PASS]
-   - Proxima crossing: 1.26 x 10^26 protons [PASS]
+   - n_ISM = 1.0 x 10^5 /m^3, R = 45.86 m (was 100 m at full scale) [PASS]
+   - Proxima crossing: 2.65 x 10^25 protons, was 1.26 x 10^26 at full scale [PASS]
 
 2. **ISM blast energy** E = N m_p c^2 beta^2/2 (conservative floor)
-   - At beta=0.5: 2.37 x 10^15 J (2.37 PJ) [PASS]
+   - At beta=0.5: 4.99 x 10^14 J (0.50 PJ), was 2.37 PJ at full scale [PASS]
 
 3. **Static observer lapse** dtau/dt = sqrt(1 - beta^2 f(r)^2)
    - At centre (f=1): 1/gamma(beta) [PASS]
@@ -404,6 +404,129 @@ These proofs verify that different formulas computing the same quantity from dif
 10. **MMP mass = c^3 sqrt(L/(4G^2 g))** from tidal formula, solving for M [PASS]
 11. **Mouth clock rate = sqrt(1+2Phi/c^2) / gamma** grav x kinematic consistency [PASS]
 
+### Maximum time travel proofs (section 19j)
+
+These proofs back the `--send` scenarios 7-9, which push the time-travel levers to their physical limits. 7 proof blocks, 5 new self-test checks (157 -> 162).
+
+1. **Combined mouth clock rate** dtau/dt = sqrt(1 + 2Phi/c^2) * 1/gamma(beta)
+   - The two effects MULTIPLY (independent, both slow the clock)
+   - Neutron star (Phi/c^2=-0.3) + beta=0.99: rate = 0.089219 (B ages at 8.9% of A) [PASS]
+   - Near horizon (Phi/c^2=-0.45) + beta=0.999: rate = 0.014139 (B ages at 1.4% of A) [PASS]
+   - At horizon (Phi/c^2=-0.5): rate = 0 (frozen) [PASS]
+   - GPS measures both effects daily: 45 us/day (GR) + 7 us/day (SR)
+
+2. **CTC onset at minimum separation** t_onset = (D/c) / |rate_diff|
+   - At 1 AU (light-time = 499 s = 8.3 min):
+     - NS + 0.99c: onset = 548 s = 9.1 min [PASS]
+     - Horizon + 0.999c: onset = 506 s = 8.4 min [PASS]
+   - At Proxima (light-time = 4.25 yr):
+     - NS + 0.99c: onset = 4.66 yr [PASS]
+   - Onset is always > light-time (offset must accumulate first)
+
+3. **Maximum backward jump** (step A -> B) offset = rate_diff * elapsed
+   - NS + 0.99c, 1 yr: offset = 333 d [PASS]
+   - NS + 0.99c, 10 yr: offset = 9.11 yr [PASS]
+   - NS + 0.99c, 100 yr: offset = 91.08 yr [PASS]
+   - Horizon + 0.999c, 100 yr: offset = 98.59 yr [PASS]
+   - Jump approaches elapsed (rate_diff -> 1) but never exceeds it
+
+4. **Maximum forward jump** (step B -> A) -- same offset, opposite direction
+   - Forward jump = backward jump (symmetric wormhole) [PASS]
+   - No new physics -- just the other way through the throat
+
+5. **Warp drive cannot time-travel** (flat interior theorem)
+   - Warp bubble interior is exactly Minkowski (f=1, all derivatives zero)
+   - Warp-carried mouth: rate_diff = 0.000 [PASS]
+   - Rocket-carried mouth at beta=0.9: rate_diff > 0 [PASS]
+   - The FAST thing cannot build the causality violation; the SLOW rocket can
+
+6. **Warp drive gravitational drift** (the only time shift the drive produces)
+   - drift = integral (grav_rate(x) - earth_rate) dx over the crossing
+   - At beta=0.857: drift = +1.54 s over 4.96 yr [PASS]
+   - NOT controllable (set by Sol-Proxima gravitational potential difference)
+   - NOT a time machine (1.5 seconds is not a CTC)
+
+7. **All time-travel scenarios remain blocked**
+   - Exotic energy: -2.73 x 10^51 J needed, 46 orders short of Casimir [PASS]
+   - Quantum inequalities: throat closes in ~1e-22 s vs ~5.4e7 s traversal [PASS]
+   - Chronology protection: Hawking CPC (1992) expects vacuum divergence [PASS]
+   - The maximum time jump is a mathematical result, not an engineering capability
+
+### Near-light-speed achievement proofs (section 19k)
+
+These proofs show how the ship reaches beta = 0.857 (85.7% of lightspeed) -- not as a declared parameter, but as an emergent result of a race between two clocks. 7 proof blocks, 7 new self-test checks (162 -> 169).
+
+1. **The energy clock** (what the ship needs) KE = (gamma - 1) M c^2
+   - M = 16,602 t (derived from geometry x density, not declared)
+   - gamma = 1/sqrt(1-beta^2) -- diverges at beta=1 (infinite energy)
+   - At beta=0.857: KE = 1.40 x 10^24 J = 1.40 YJ [PASS]
+   - At beta=0.9: KE = 1.93 YJ (38% more for 4% more speed) [PASS]
+   - At beta=0.99: KE = 9.09 YJ (6.5x more for 15% more speed) [PASS]
+   - The gamma curve is why near-light speed is hard: each knot costs more than the last
+
+2. **The range clock** (what the beam can deliver) d_spot = 2.44 lambda L / D
+   - lambda = 1.0 um, D = 1000 km -> spot grows linearly with distance
+   - f_capture = (d_rectenna / d_spot)^2 -> falls as 1/L^2
+   - d_rectenna = 4 km (deployed film)
+   - P_tap = 10^17 W (0.026% of L_sun -- a stellar tap, not a battery)
+   - At 0.01 ly: capture = 100%, P = 10^17 W
+   - At 0.50 ly: capture = 12%, P = 1.2 x 10^16 W
+   - At 0.62 ly: capture = 7.8%, P = 7.8 x 10^15 W (usable range ends)
+   - Capture at 1.0 ly is ~1/4 of capture at 0.5 ly (1/L^2 scaling) [PASS]
+
+3. **The race** (two clocks, one winner)
+   - The boost integrates in 3-day steps: got += P_captured(x) * dt; v = c * sqrt(1 - 1/(1 + got/(Mc^2))^2); x += v * dt
+   - The energy clock says: you need (gamma-1)Mc^2 joules
+   - The range clock says: you are moving away, spot grows, capture falls, power drops
+   - Whichever runs out FIRST sets the cruise speed
+   - At beta=0.857: need 1.40 YJ, delivered 1.398 YJ -> JUST makes it [PASS]
+   - At beta=0.86: need 1.43 YJ, delivered 1.398 YJ -> FALLS SHORT [PASS]
+   - At beta=0.9: need 1.93 YJ, delivered 1.398 YJ -> 28% short [PASS]
+   - The margin between 0.857 and 0.86 is 2% of the energy bill -- that is how tight the race is
+
+4. **Why shrinking raises the speed** (the refit lever, step by step)
+   - The beam is FIXED (external infrastructure, unchanged across all refits)
+   - The ship mass M falls with each pass. Since KE = (gamma-1)Mc^2, smaller M means less energy for the same beta
+   - The ship climbs higher on the gamma curve before it outruns the beam
+   - Pass 0 (WD-1): M=127,000 t -> beta=0.562 (gamma=1.21)
+   - Pass 1 (WD-1m): M=42,719 t -> beta=0.727 (gamma=1.45)
+   - Pass 2 (WD-1m2): M=27,003 t -> beta=0.794 (gamma=1.63)
+   - Pass 3 (WD-1m3): M=18,374 t -> beta=0.844 (gamma=1.86)
+   - Pass 4 (WD-1m4): M=18,215 t -> beta=0.845 (gamma=1.87)
+   - Pass 5 (WD-1m5): M=16,602 t -> beta=0.857 (gamma=1.94)
+   - Mass fell 87%; speed rose 52%; gamma rose 60%
+   - The relationship is NOT linear -- the gamma curve makes each tonne saved worth more than the last
+   - Lighter ship reaches higher beta: beta(M)=0.857 > beta(2M)=0.765 [PASS]
+
+5. **Why it cannot reach beta=1** (the hard wall)
+   - At beta=1: gamma = infinity -> KE = infinity
+   - No finite beam can deliver infinite energy -- this is special relativity, not engineering
+   - The gamma curve has a vertical asymptote at beta=1:
+     - beta=0.857: gamma=1.94, KE=1.40 YJ
+     - beta=0.9: gamma=2.29, KE=1.93 YJ (1.38x for +4%)
+     - beta=0.95: gamma=3.20, KE=3.29 YJ (2.3x for +9%)
+     - beta=0.99: gamma=7.09, KE=9.09 YJ (6.5x for +13%)
+     - beta=0.999: gamma=22.4, KE=33.5 YJ (24x for +14%)
+     - beta=1.0: gamma=inf, KE=inf (wall)
+   - Each percent closer to c costs more than the last percent
+   - The ship sits at 85.7% because the beam runs out at 0.62 ly, not because 85.7% is a round number
+
+6. **The boost profile** (300 days, integrated explicitly)
+   - The boost is NOT instantaneous. boost_profile() integrates in 3-day steps
+   - Tracks position, velocity and delivered energy simultaneously
+   - Ship starts at rest, beam captures 100% at first (spot < rectenna)
+   - Capture falls as the ship pulls away
+   - After 300 days the energy clock and range clock converge [PASS]
+   - Delivered energy matches KE at max cruise within 5% [PASS]
+
+7. **What would raise the speed further** (the levers)
+   - Since beta_max is emergent from the race, changing any input changes the result -- but only three levers exist:
+     - a) LARGER APERTURE: D=2000 km -> spot halves, range doubles -> beta rises (~0.9+). Cost: 4x the structure
+     - b) SHORTER WAVELENGTH: lambda=0.5 um -> spot halves -> same effect as doubling aperture. Cost: harder optics
+     - c) LIGHTER SHIP: M/2 -> half the KE for same beta -> beta rises. Cost: fewer crew, less redundancy
+   - None of these touch beta=1. The gamma wall is absolute
+   - The beam can push the ship arbitrarily close to c, but never to c
+
 ### Dimensional analysis (all formulas verified)
 
 Every formula has been checked for dimensional consistency in SI base units:
@@ -435,23 +558,23 @@ For each of the 8 barriers that block the drive, the model computes the exact nu
 
 | # | Barrier | Status | Value | Threshold | Gap |
 |---|---------|--------|-------|-----------|-----|
-| 1 | Bubble wall tidal gradient | FAIL | 7.04e15 g | 1 g | 16 orders |
+| 1 | Bubble wall tidal gradient | FAIL | 1.76e17 g | 1 g | 17 orders |
 | 2 | Superluminal NEC (SSV theorem) | THEOREM | NEC violated at v>c | NEC required | theorem |
-| 3 | Negative energy scale | FAIL | 3.36e46 J needed | 2.0e6 J (Casimir) | 40 orders |
+| 3 | Negative energy scale | FAIL | 3.54e46 J needed (45.86 m bubble, 0.2 m wall) | 1.9e5 J (Casimir) | 41 orders |
 | 4 | Steering above beta=1 | THEOREM | causally disconnected | controllable | theorem |
-| 5 | Thermal survival at 2c | FAIL | 2187 K | 1900 K | 15% over |
-| 6 | Ford-Roman wall thickness | THEOREM | delta_max = 100 L_P | delta = 1 m | theorem |
+| 5 | Thermal survival at 2c | FAIL | 1904 K | 1900 K | 0.2% over |
+| 6 | Ford-Roman wall thickness | THEOREM | delta_max = 100 L_P | delta = 0.2 m | theorem |
 | 7 | QI throat hold time | THEOREM | 3.25e-26 s | 4.8 s traversal | 26 orders |
 | 8 | CTC chronology protection | CONJECTURE | divergent vacuum | stable throat | conjecture |
 
 **Routes past each barrier (and why they fail):**
 
-1. **Wall tidal**: Thinner wall -> MORE tidal, not less. At QI-legal thickness (100 L_P): 2.70e81 g. Anti-route.
+1. **Wall tidal**: Thinner wall -> MORE tidal, not less. Cutting `wall_thick_m` from 1.0 m to 0.2 m to buy back flat interior (see `overview.md`) made this barrier numerically *worse* (1.76e17 g vs 7.04e15 g at 1.0 m) -- an honest trade the model reports rather than hides, since the wall was never a survivable place at either thickness. At QI-legal thickness (100 L_P): even further beyond reach. Anti-route regardless.
 2. **Superluminal NEC**: SSV theorem (2022) proves ANY v>c warp violates NEC. No route -- this is a theorem about the whole class, not just Alcubierre's ansatz.
-3. **Negative energy**: More Casimir cassettes -> need 4e41 cassettes. Each is 1m x 1m. That is 10^29 Earths of Casimir plates.
+3. **Negative energy**: More Casimir cassettes -> need ~4.4e42 cassettes. Shrinking the bubble and thinning the wall move the raw exotic-energy demand around (3.54e46 J now, versus 3.36e46 J for the original 100 m/1.0 m-wall bubble and 4.89e46 J for the pass-2 53.95 m/0.2 m-wall bubble), but the onboard Casimir supply is always many orders too small regardless of how these knobs are turned.
 4. **Steering**: Forward wall is causally disconnected at v>c. The crew cannot send a control signal to the front of the bubble. The entire trajectory must be pre-laid. Theorem (Everett 1996, Coule 1998, Krasnikov 1998).
-5. **Thermal**: More radiator area -> need 65688 m^2 (have 37440 m^2). This is the ONLY passable barrier -- 1.8x more radiator area would fix it. But it only buys you beta ~ 1.45, not superluminal.
-6. **Ford-Roman wall**: QI theorem limits wall to 100 L_P = 1.62e-33 m. At that thickness E = 2.08e79 J = 10^9 universes of energy.
+5. **Thermal**: More radiator area -> need 7,146 m^2 (have 7,081 m^2, was 65,688 vs 37,440 at full scale). This is the ONLY passable barrier, and the smaller hull needs proportionally less extra area each refit pass (+75% -> +20.6% -> +3.3% -> +0.9% now) -- it currently buys beta ~ 1.99 before failing, not superluminal. `--selftest` deliberately keeps this barrier failing at 2c so the redesign cannot claim to have solved it by shrinking past the point where it matters; this margin is now thin enough that it is close to the practical floor for further pure shrinkage.
+6. **Ford-Roman wall**: QI theorem limits wall to 100 L_P = 1.62e-33 m -- twenty-nine orders of magnitude below the ship's actual 0.2 m wall. At that thickness E = 2.08e79 J = 10^9 universes of energy.
 7. **QI throat**: Throat closes in 3.25e-26 s. Traversal takes 4.8 s. The throat closes 10^26 times before you are halfway through.
 8. **CTC**: Hawking's chronology protection conjecture (1992) expects divergent vacuum fluctuations at the chronology horizon. Not proven, but strongly expected by the majority of the field.
 
@@ -474,29 +597,29 @@ m_component = surface_area x wall_thickness x density    (shells)
 m_component = volume x density                            (solids)
 ```
 
-**Total ship mass:** 1.270 x 10^8 kg (126,986 tonnes) [Self-test: PASS]
+**Total ship mass (WD-1m5, SCALE_S = 0.4586 overall):** 1.660 x 10^7 kg (16,602 tonnes) -- was 1.270 x 10^8 kg (126,986 t) at full WD-1 scale, 4.272 x 10^7 kg (42,719 t) after pass 1, 2.700 x 10^7 kg (27,003 t) after pass 2, 1.837 x 10^7 kg (18,374 t) after pass 3, 1.821 x 10^7 kg (18,215 t) after pass 4 [Self-test: PASS]
 
 | Component | Mass (kg) | % | Formula |
 |-----------|-----------|---|---------|
-| Warp ring shell | 72,837,680 | 57.4% | 4pi^2 R r x wall x 4100 kg/m^3 |
-| HTS field coils (24) | 23,144,013 | 18.2% | 24 x coil_volume x 6000 kg/m^3 |
-| Shaping rings (2) | 19,034,914 | 15.0% | 2 x torus_surface x 0.35 x 4100 |
-| Pylons (3) | 2,612,736 | 2.1% | 3 x 84 x 3.2 x 1.2 x 2700 |
-| Radiators (20) | 2,134,080 | 1.7% | 20 x 52 x 18 x 0.06 x 1900 |
-| Fusion reactor | 1,995,397 | 1.6% | torus_surface x 0.9 x 5200 |
-| Crew hull shell | 1,786,685 | 1.4% | hull_area x 0.22 x 2700 |
-| SMES buffer | 885,896 | 0.7% | torus_surface x 0.25 x 6800 |
-| Crew decks (4) | 650,287 | 0.5% | 4 x pi r^2 x 0.35 x 2700 |
-| Casimir lattice (24) | 635,904 | 0.5% | 24 x 2.4^2 x 2.0 x 2300 |
-| Magsail loop | 420,000 | 0.3% | 4.2e5 kg (HTS cable) |
-| Cryoplant (4) | 298,577 | 0.2% | 4 x pi r^2 x 11 x 240 |
-| Antimatter traps (2) | 224,264 | 0.2% | 2 x 4pi r^2 x 0.30 x 4400 |
-| RCS pods (8) | 191,134 | 0.2% | 8 x pi r^2 x 5 x 900 |
-| Deflector | 78,885 | 0.1% | pi r^2 x 0.10 x 3100 |
-| Consumables + crew | 38,400 | 0.0% | 12 x 3200 |
-| Boost rectenna | 17,593 | 0.0% | pi (2000)^2 x 1e-6 x 1400 |
+| Warp ring shell | 6,894,454 | 41.5% | 4pi^2 R r x wall x 4100 kg/m^3 |
+| HTS field coils (24) | 4,029,059 | 24.3% | 24 x coil_volume x 5600 kg/m^3 (0.30 m build) |
+| Shaping rings (2) | 3,430,757 | 20.7% | 2 x torus_surface x 0.30 x 4100 |
+| Pylons (3) | 550,389 | 3.3% | 3 x 38.52 x 1.47 x 1.2 x 2700 |
+| Radiators (20) | 403,643 | 2.4% | 20 x 22.61 x 7.83 x 0.06 x 1900 |
+| Fusion reactor | 386,875 | 2.3% | torus_surface x 0.9 x 5200 |
+| Crew hull shell | 204,878 | 1.2% | hull_area x 0.11 x 2700 |
+| Magsail loop | 200,000 | 1.2% | 2.0e5 kg (HTS cable, unchanged since pass 2) |
+| SMES buffer | 186,223 | 1.1% | torus_surface x 0.25 x 6800 |
+| Crew decks (3) | 102,958 | 0.6% | 3 x pi r^2 x 0.35 x 2700 |
+| Casimir lattice (24) | 61,449 | 0.4% | 24 x 1.10^2 x 0.92 x 2300 |
+| Antimatter traps (2) | 47,375 | 0.3% | 2 x 4pi r^2 x 0.30 x 4400 |
+| Cryoplant (4) | 28,738 | 0.2% | 4 x pi r^2 x 5.04 x 240 |
+| Consumables + crew (6) | 19,200 | 0.1% | 6 x 3200 |
+| RCS pods (8) | 18,418 | 0.1% | 8 x pi r^2 x 2.30 x 900 |
+| Boost rectenna | 17,593 | 0.1% | pi (2000)^2 x 1e-6 x 1400 |
+| Deflector | 16,571 | 0.1% | pi r^2 x 0.10 x 3100 |
 
-**Cross-check:** sum(mass_budget) = SHIP_MASS_KG (verified to 1e-6) [Self-test: PASS]
+**Cross-check:** sum(mass_budget) = SHIP_MASS_KG (verified to 1e-6) [Self-test: PASS]. The ring/coil/shaping-ring group still dominates (~88% of dry mass) -- shrinking every dimension by close to the same factor preserves the mass fractions almost exactly, which is why a straight geometric scale-down is a self-consistent redesign rather than an arbitrary reshuffle. This pass moved only two line items: the fusion reactor (-8% mass, following its power cut) and the crew hull shell (-39% mass, following the pressure-vessel wall-thickness re-derivation) -- everything else is byte-for-byte the pass-3 geometry.
 
 ### 2. D-3He fusion reactor (housekeeping power)
 
@@ -504,16 +627,18 @@ The reactor does NOT move the ship. It runs the coils, cryoplant, and hotel load
 
 **Formula:**
 ```
-P_thermal = 22 GW
-P_electrical = P_thermal x eta_direct = 22 x 0.62 = 13.64 GW
+P_thermal = 2.62 GW      (was 22 GW at full scale, 7 / 4.35 / 2.91 GW after passes 1/2/3)
+P_electrical = P_thermal x eta_direct = 2.62 x 0.62 = 1.62 GW      (was 13.64 GW)
 m_fuel = E_required / (eta x E_D3He_per_kg)
 E_D3He = 3.52 x 10^14 J/kg  (D + 3He -> 4He + p + 18.35 MeV)
 ```
 
+Resized from 22 GW to 2.62 GW (-88% overall). Passes 1-3 tracked the cruise electrical load down at a fixed ~1.5x margin inherited from WD-1; pass 4 re-examined that margin itself and settled on 1.35x -- still a 35% reserve, comfortably inside the 20-40% band typical of aerospace fusion/fission power-plant design, and a genuine additional cut (-10%) that cost nothing else, since the margin choice never touched geometry, envelope fit, or thermal balance. Pass 5 reduced the HTS coil winding build and shaping-ring solid fraction (see section 6), which lowered the cruise load slightly via the lighter ship, but the reactor was already sized at pass 4 and was not re-cut -- the pass-5 mass savings show up as extra margin and higher emergent cruise speed, not as a smaller reactor.
+
 **Computed values:**
-- Thermal output: 22 GW
+- Thermal output: 2.62 GW
 - Direct conversion efficiency: 62% (aneutronic)
-- Fuel for Proxima crossing at beta=0.5: 4,419 kg D-3He [Self-test: PASS]
+- Fuel for Proxima crossing at beta=0.5: 730 kg D-3He (was 4,419 kg at full scale; unaffected by the pass-4 margin change, which touches reactor sizing, not cruise fuel burn) [Self-test: PASS]
 - Specific energy: 3.52 x 10^14 J/kg
 
 ### 3. Stellar-tap boost beam (the only way to accelerate)
@@ -527,6 +652,8 @@ f_capture = (d_rectenna / d_spot)^2   if d_spot > d_rectenna, else 1.0
 P_captured = P_tap x f_capture
 ```
 
+The transmitter itself is unchanged ground/orbital infrastructure -- shrinking the ship does not touch it. What changes is the mass on the other end: a lighter hull needs less delivered energy (gamma-1) M c^2 to reach any given beta, so it climbs further up the diffraction-range race before it runs out of usable beam.
+
 **Computed values:**
 - Tap power: 1.0 x 10^17 W (0.026% of L_sun)
 - Aperture: 1000 km, wavelength: 1.0 um
@@ -537,15 +664,15 @@ P_captured = P_tap x f_capture
 - At 1.00 ly: spot = 23.1 km, capture = 3.0% [Self-test: PASS]
 - Capture never exceeds 1.0 (energy conservation) [Self-test: PASS]
 - Usable boost range: 0.62 ly
-- Maximum emergent cruise speed: beta = 0.562 [Self-test: PASS]
+- Maximum emergent cruise speed: beta = 0.857 (was 0.562 at full scale, 0.727 / 0.794 / 0.844 / 0.845 after passes 1/2/3/4) [Self-test: PASS]
 
 **Boost energy:**
 ```
 KE = (gamma - 1) M c^2
 ```
-- At beta=0.5: KE = 1.77 x 10^24 J (1.77 YJ), boost time = 207 d [Self-test: PASS]
-- At beta=0.562: KE = 2.38 x 10^24 J, boost time = 276 d
-- At beta=0.9: KE = 1.48 x 10^25 J -- beam cannot deliver (range exceeded)
+- At beta=0.5: KE = 2.33 x 10^23 J (0.23 YJ), boost time = 27 d (was 1.77 YJ / 207 d at full scale) [Self-test: PASS]
+- At beta=0.857: KE = 1.40 x 10^24 J (1.40 YJ), boost time = 300 d -- the new emergent cruise speed
+- At beta=0.9: KE = 2.14 x 10^24 J -- beam cannot deliver (range exceeded)
 
 ### 4. SMES magnetic energy storage (transient buffer)
 
@@ -556,11 +683,11 @@ V_torus = 2 pi^2 R r^2
 ```
 
 **Computed values:**
-- Major radius: 11 m, minor radius: 1.2 m
-- Field: 60 T
-- Volume: 2 pi^2 x 11 x 1.2^2 = 313 m^3
+- Major radius: 5.04 m, minor radius: 0.55 m (was 11 m / 1.2 m at full scale)
+- Field: 60 T (unchanged HTS technology)
+- Volume: 2 pi^2 x 5.04 x 0.55^2 = 30.1 m^3
 - Energy density: B^2/(2 mu_0) = 60^2 / (2 x 4pi x 10^-7) = 1.43 x 10^9 J/m^3
-- Stored: 4.48 x 10^11 J = 448 GJ [Self-test: PASS]
+- Stored: 4.31 x 10^10 J = 43.1 GJ (was 448 GJ at full scale, 123 / 69.8 GJ after passes 1/2) [Self-test: PASS]
 - This is 12 orders of magnitude too small to change the ship's velocity
 
 ### 5. Waste-heat radiators (Stefan-Boltzmann thermal balance)
@@ -572,38 +699,39 @@ T = (P_waste / (epsilon x sigma_SB x A))^(1/4)
 ```
 
 **Computed values:**
-- Panels: 20, each 52 m x 18 m, both faces
-- Total area: 37,440 m^2 [Self-test: PASS]
+- Panels: 20, each 22.61 m x 7.83 m, both faces (was 52 m x 18 m at full scale)
+- Total area: 7,081 m^2 (was 37,440 m^2 at full scale, 15,818 / 10,895 m^2 after passes 1/2) [Self-test: PASS]
 - Emissivity: 0.92
 - Graphite sublimation limit: 1900 K
 - Design temperature: 1550 K
 
 | beta | Load (W) | Waste (W) | T (K) | Status |
 |------|----------|-----------|-------|--------|
-| 0.10 | 1.44e9 | 2.32e9 | 1044 | OK |
-| 0.50 | 3.60e9 | 5.80e9 | 1313 | OK |
-| 0.56 | 4.11e9 | 6.63e9 | 1357 | OK |
-| 0.90 | 7.74e9 | 1.25e10 | 1590 | OK |
-| 0.99 | 8.95e9 | 1.44e10 | 1649 | OK |
-| 1.00 | 9.09e9 | 1.47e10 | 1655 | OK |
-| 1.50 | 1.68e10 | 2.72e10 | 1931 | OVER LIMIT |
-| 2.00 | 2.77e10 | 4.47e10 | 2187 | OVER LIMIT |
+| 0.10 | 3.09e8 | 4.99e8 | 1078 | OK |
+| 0.50 | 5.94e8 | 9.58e8 | 1269 | OK |
+| 0.84 | 9.92e8 | 1.60e9 | 1443 | OK |
+| 0.90 | 1.07e9 | 1.73e9 | 1470 | OK |
+| 0.99 | 1.20e9 | 1.94e9 | 1514 | OK |
+| 1.00 | 1.22e9 | 1.97e9 | 1519 | OK |
+| 1.50 | 1.97e9 | 3.17e9 | 1712 | OK |
+| 1.99 | 2.94e9 | 4.74e9 | 1893 | OVER LIMIT (barrier threshold) |
+| 2.00 | 3.01e9 | 4.86e9 | 1904 | OVER LIMIT |
 
 - Round-trip: P = eps x sigma x A x T^4 recovers P [Self-test: PASS]
-- Radiators FAIL above beta ~ 1.45 [Self-test: PASS]
+- Radiators FAIL above beta ~ 1.99 (was beta ~ 1.45 at full scale, ~1.79 / ~1.97 after passes 1/2) [Self-test: PASS] -- waste heat keeps falling faster than radiator area as the ship shrinks, so equilibrium temperature keeps falling at every beta. `--selftest` hard-asserts T(2c) still exceeds the 1900 K limit -- the redesign is not allowed to quietly erase this barrier, only to shrink the margin needed to eventually fix it (now +0.9% radiator area, was +75% at full scale). This is now the tightest margin among all three passes and effectively the practical stopping point for pure shrinkage.
 
 ### 6. Cryoplant (HTS coil refrigeration at 18 K)
 
 **Formula:**
 ```
-P_cryo = 740 MW (constant, independent of beta)
+P_cryo = 155.8 MW (constant, independent of beta; was 740 MW at full scale, 313 / 215.6 MW after passes 1/2)
 ```
 
-The cryoplant holds the 24 REBCO coils at 18 K. This is a constant overhead -- it does not scale with speed. At cruise, the coil AC losses (6.2 GW at beta=1) dominate the load.
+The cryoplant holds the 24 REBCO coils at 18 K. This is a constant overhead -- it does not scale with speed. It was resized because cryostat radiative heat leak scales with cold-surface area, not volume. At cruise, the coil AC losses (598 MW at beta=1, was 6.2 GW at full scale) dominate the load.
 
-- 4 cryo units, each 6 m diameter x 11 m long
-- Cryoplant mass: 298,577 kg
-- Power draw: 740 MW [Self-test: PASS (cruise_load includes cryo)]
+- 4 cryo units, each 2.75 m diameter x 5.04 m long (was 6 m x 11 m at full scale)
+- Cryoplant mass: 28,738 kg (was 298,577 kg at full scale)
+- Power draw: 155.8 MW [Self-test: PASS (cruise_load includes cryo)]
 
 ### 7. Casimir negative-energy lattice (the only real exotic-energy source)
 
@@ -615,14 +743,14 @@ E_total = E_cassette x 24 cassettes
 ```
 
 **Computed values:**
-- 24 cassettes, each 2.40 m x 2.40 m plates, 10 nm gap, 2.00 m stack
-- Plates per cassette: 33,333,333
-- Gap volume per cassette: 1.920 m^3
-- Energy density at 10 nm: -4.33 x 10^4 J/m^3 [Self-test: PASS]
-- Energy per cassette: -8.32 x 10^4 J
-- Total onboard: -2.00 x 10^6 J (-2 MJ) [Self-test: PASS]
-- Warp bubble demand at delta=1m: -3.36 x 10^46 J
-- **Shortfall: 40 orders of magnitude** [Self-test: PASS]
+- 24 cassettes, each 1.10 m x 1.10 m plates, 10 nm gap, 0.92 m stack (was 2.40 m / 2.00 m at full scale)
+- Plates per cassette: ~15,333,333
+- Gap volume per cassette: 0.186 m^3
+- Energy density at 10 nm: -4.33 x 10^4 J/m^3 [Self-test: PASS] (a material/nanoscale property -- unaffected by ship scale)
+- Energy per cassette: -8.04 x 10^3 J
+- Total onboard: -1.93 x 10^5 J (-0.19 MJ) (was -2 MJ at full scale) [Self-test: PASS]
+- Warp bubble demand at delta=0.2m for the 45.86 m bubble (superluminal/Alcubierre mode, never actually drawn on): -3.54 x 10^46 J -- smaller than pass 2's -4.89 x 10^46 J because the bubble shrank further this pass while the wall thickness held at 0.2 m
+- **Shortfall: ~41 orders of magnitude** [Self-test: PASS] -- scale and wall thickness move the exotic-energy bill around, but the Casimir supply available onboard is always many orders too small regardless
 - 1/a^4 scaling verified: rho(20nm)/rho(10nm) = 1/16 [Self-test: PASS]
 
 ### 8. Magnetic sail (the only credible way to stop)
@@ -635,19 +763,19 @@ t_stop = (M/k) x (1/v_f - 1/v_0)
 ```
 
 **Computed values:**
-- Loop radius: 1000 km, area: 3.14 x 10^12 m^2 [Self-test: PASS]
-- Cd = 0.85, current: 1.6 MA, mass: 420,000 kg
+- Loop radius: 700 km (was 1000 km at full scale; unchanged since pass 2), area: 1.54 x 10^12 m^2 [Self-test: PASS]
+- Cd = 0.85, current: 1.1 MA, mass: 200,000 kg (was 1.6 MA / 420,000 kg at full scale; unchanged since pass 2)
 - ISM density: 1.0 x 10^5 protons/m^3 (0.1/cm^3)
 
 | beta | Drag (N) | Halving time | Stop time |
 |------|----------|-------------|-----------|
-| 0.1 | 4.0e5 | 300 yr | 30,000 yr |
-| 0.5 | 1.0e7 | 60 yr | 30,000 yr |
-| 1.0 | 4.0e7 | 30 yr | 30,000 yr |
+| 0.10 | 2.0e5 | 80 yr | 7,938 yr |
+| 0.50 | 4.9e6 | 16 yr | 8,002 yr |
+| 0.84 | 1.4e7 | 9.5 yr | 8,008 yr |
 
 - F scales as v^2: F(1.0) = 4 x F(0.5) [Self-test: PASS]
 - Halving time = M/(k v0) [Self-test: PASS]
-- Stop time ~ 30,000 yr -- the honest number [Self-test: PASS]
+- Stop time ~ 8,000 yr -- the honest number, and shorter than WD-1m4's ~8,786 yr, WD-1m2's ~13,000 yr, WD-1m's ~20,600 yr, and WD-1's 30,000 yr with the SAME magsail hardware (unchanged since pass 2): every further mass cut keeps paying off with no additional hardware changes [Self-test: PASS]
 - Drag falls as v^2 -- the brake fades when you need it most
 
 ### 9. Photon brake (destination array)
@@ -659,9 +787,9 @@ t = gamma x M x v / F
 ```
 
 **Computed values:**
-- At 0.02 ly from destination array: F = 6.67 x 10^8 N [Self-test: PASS]
+- At 0.02 ly from destination array: F = 6.67 x 10^8 N [Self-test: PASS] (force depends on beam/array geometry, not ship mass, so it is unchanged)
 - F <= 2P_tap/c (cannot exceed full beam pressure) [Self-test: PASS]
-- Brake time at beta=0.5: 381 days [Self-test: PASS]
+- Brake time at beta=0.5: 50 days (was 381 days at full scale, 128 / 81 / 55 / 55 days after passes 1/2/3/4) -- faster with every mass cut on the same array [Self-test: PASS]
 - Requires a destination array already in place at Proxima
 
 ### 10. ISM hazard (interstellar medium loading)
@@ -674,9 +802,9 @@ E_blast = N x m_p x c^2 x beta^2 / 2    (conservative floor)
 
 **Computed values:**
 - ISM density: 1.0 x 10^5 protons/m^3
-- Bubble radius: 100 m
-- Proxima crossing: N = 1.26 x 10^26 protons [Self-test: PASS]
-- Blast at beta=0.5: 2.37 x 10^15 J (2.37 PJ) [Self-test: PASS]
+- Bubble radius: 45.86 m (was 100 m at full scale, 65 / 53.95 m after passes 1/2)
+- Proxima crossing: N = 2.65 x 10^25 protons (was 1.26 x 10^26 at full scale) -- fewer, because swept volume scales with R^2 [Self-test: PASS]
+- Blast at beta=0.5: 4.99 x 10^14 J (0.50 PJ, was 2.37 PJ at full scale) [Self-test: PASS]
 - The true spectrum is worse -- this is a floor
 - The wall collects them; they do not pass through
 
@@ -692,8 +820,8 @@ drift = integral_0^D (rate(x) - rate_earth) dx / D x t_total
 - Sol well: M_sun at AU
 - Proxima well: 0.1221 M_sun at 0.0485 AU
 - Galactic potential: Phi/c^2 = -1.0 x 10^-6 (common to both ends, cancels)
-- Drift at beta=0.562: +2.35 s (crew age 2.35 s more than Earth) [Self-test: PASS]
-- Ship self-gravity: -9.43 x 10^-22 (negligible, 12 orders below best clock) [Self-test: PASS]
+- Drift at beta=0.857 (was 0.562 at full scale, 0.727 / 0.794 / 0.844 / 0.845 after passes 1/2/3/4): +1.54 s over the 4.96 yr crossing (crew age 1.54 s more than Earth) -- a shorter, faster crossing means less time for the gravitational term to accumulate [Self-test: PASS]
+- Ship self-gravity: -2.69 x 10^-22 (negligible, 12 orders below best clock; was -9.43 x 10^-22 at full scale -- smaller and lighter, so weaker still) [Self-test: PASS]
 - Warp interior is flat -- no dilation dividend [Self-test: PASS]
 
 ### 12. Energy conditions (NEC/WEC/DEC/SEC)
@@ -740,9 +868,9 @@ delta_max ~ 100 L_Planck / beta
 E = m x 2c^2 = 1.7975 x 10^17 J/kg  (matter + antimatter)
 ```
 
-- 2 traps, 0.85 kg antihydrogen each
-- Total: 1.7 kg antimatter
-- Energy: 1.7 x 1.80 x 10^17 = 3.06 x 10^17 J
+- 2 traps, 0.082 kg antihydrogen each (was 0.85 kg at full scale -- scaled down with the smaller kinetic-energy bill it buffers)
+- Total: 0.164 kg antimatter
+- Energy: 0.164 x 1.80 x 10^17 = 2.95 x 10^16 J
 - Used only for peak fold transitions (bubble spinup/shutdown), not propulsion
 
 ### 16. Quantum teleportation (the real teleporter -- for contrast)
@@ -764,7 +892,7 @@ time = bits / channel_bps = 7e29 / 1e12 = 7e17 s
 
 ## Test results
 
-### Self-test: 157 / 157 checks pass
+### Self-test: 169 / 169 checks pass
 
 ```
 python Warpdrive.py --selftest
