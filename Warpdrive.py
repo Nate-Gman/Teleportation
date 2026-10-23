@@ -1576,7 +1576,7 @@ class ShipRenderer:
         self.hover_spread = 0.0
         self.hidden = set()                   # part keys temporarily hidden
         try:
-            self._lo = self.parts_builder(0.30)  # coarse build for moving views
+            self._lo = self.parts_builder(0.55)  # coarse build for moving views
         except Exception:
             self._lo = []
         # pre-merge both LODs now so the first settled frame after any
@@ -1599,6 +1599,7 @@ class ShipRenderer:
         self._prog = None          # in-progress chunked hi repaint, or None
         self._ghi = None           # global merged geometry, per LOD
         self._glo = None
+        self._spins = None         # does any mesh spin? (angles cache-key gate)
 
     # ---- camera -----------------------------------------------------------
     def reset_view(self):
@@ -1636,9 +1637,15 @@ class ShipRenderer:
 
     # ---- view state -------------------------------------------------------
     def set_view(self, mode):
+        if mode not in ("full", "exploded", "assembly"):
+            raise ValueError("unknown view %r" % (mode,))
         self.view = mode
         if mode == "assembly" and self.assembled >= len(self.parts):
             self.assembled = 0
+        elif mode != "assembly":
+            # leaving the puzzle restores the whole car -- otherwise parts
+            # past the assembly cursor stay painted as pending ghosts
+            self.assembled = len(self.parts)
         self.selected = None
 
     def toggle_section(self):
@@ -1745,11 +1752,21 @@ class ShipRenderer:
                 tuple(self.pop.round(2).tolist()), self.assembled,
                 round(drive_power, 3), round(rad_heat, 3),
                 round(bubble_on, 3))
-        try:
-            qang = tuple(sorted(
-                (k, round(v / 0.06)) for k, v in angles.items()
-                if isinstance(v, (int, float)) and math.isfinite(v)))
-        except (TypeError, ValueError, AttributeError):
+        # Angles only matter when some mesh actually spins (spin != 0
+        # rotates verts by angle*spin in world_verts). A parts set with no
+        # spinners cannot move -- folding a continuously-ticking animation
+        # clock into the repaint key would restart the chunked hi repaint
+        # every frame and the model would never finish drawing.
+        if self._spins is None:
+            self._spins = any(m.spin for pp in self.parts for m in pp.meshes)
+        if self._spins:
+            try:
+                qang = tuple(sorted(
+                    (k, round(v / 0.06)) for k, v in angles.items()
+                    if isinstance(v, (int, float)) and math.isfinite(v)))
+            except (TypeError, ValueError, AttributeError):
+                qang = ()
+        else:
             qang = ()
         qglow = None
         if isinstance(coil_glow, (list, tuple, np.ndarray)):
@@ -1883,7 +1900,7 @@ class ShipRenderer:
         if interacting:
             if self._lo is None:
                 try:
-                    self._lo = self.parts_builder(0.30)
+                    self._lo = self.parts_builder(0.55)
                 except Exception:
                     self._lo = []
             if self._lo:
@@ -4685,7 +4702,11 @@ def multijump_plan(cycles, elapsed_s, rate_diff, mouth_sep_m, beta,
         "gas_scooped_kg": gas_scooped,
         "net_fuel_kg": net_fuel,
         "fuel_out_at_cycle": fuel_out_at,
-        "fuel_sustainable": fuel_scooped >= fuel_burnt,
+        # inf/nan ledgers cannot claim sustainability -- honesty rule:
+        # a check you cannot measure counts as FAIL, never PASS
+        "fuel_sustainable": (math.isfinite(fuel_scooped)
+                             and math.isfinite(fuel_burnt)
+                             and fuel_scooped >= fuel_burnt),
         "load_w": load,
         "energy_per_cycle_j": load * delta_t,
         "exotic_j_per_hop": exotic_per_hop,
@@ -6446,21 +6467,20 @@ def _build_portal_parts_impl():
 
 
 # =============================================================================
-# SPECIAL WORKS -- the WD-88 FOLDMOBILE: the entire drive, downscaled to a car
+# SPECIAL WORKS -- the WD-88 FIELD CAR: the entire drive, downscaled to a car
 # =============================================================================
 # Same model, ~1/63 scale: the bubble that barely encloses a 4.4 m coupe is
 # 2.9 m across instead of 183 m. Every subsystem is carried over honestly --
 # fusion cell, SMES buffer, Penning bottles, Casimir strips, field coils,
-# radiators, rectenna, deflector, RCS, the shell itself -- and the two movie
-# conceits are kept exactly as the brief demands: the cabin flux capacitor is
-# FOR SHOW (it says so in its own spec card) and the field transition is armed
-# at 88 mph, which is an activation threshold, not physics. There is NO gas
-# engine: the wheels are fusion-fed hub motors.
+# radiators, rectenna, deflector, RCS, the shell itself -- plus the cabin
+# transition sequencer (a real distribution node, see its spec card) and the
+# field transition arming speed of 88 mph, an engineering setpoint, not
+# physics. There is NO gas engine: the wheels are fusion-fed hub motors.
 
 CAR_MASS_KG = 1410.0          # body + hardware, hub motors -- no engine, no tank
 CAR_BUBBLE_R = 2.9            # m -- smallest shell that encloses the coupe
 CAR_WALL_M = 0.22             # m -- field wall thickness (sigma = 4.5 /m)
-CAR_TRIGGER_MPH = 88.0        # activation speed -- the homage threshold
+CAR_TRIGGER_MPH = 88.0        # field-transition arming speed threshold
 CAR_MPH_M_S = 0.44704         # exact mph -> m/s
 CAR_CASIMIR_STRIPS = 12       # conduit-liner cassettes
 CAR_CASIMIR_PLATE = 0.30      # m plate edge
@@ -6468,6 +6488,10 @@ CAR_CASIMIR_DEPTH = 0.18      # m plate depth
 CAR_CASIMIR_STACK = 0.012     # m of gaps per strip
 
 SPECIAL_SECTION_KEYS = ("body",)
+
+CAR_MODEL_DETAIL = 2.0  # model upscale x2: every primitive tessellates at
+                        # double resolution. Only the MODEL refines -- the
+                        # car keeps 100% scale (same metres, same physics).
 
 
 def car_trigger_v():
@@ -6626,8 +6650,8 @@ def car_mass_budget():
         "rectenna whip": 4.0,
         # nose strip
         "deflector strip": 3.0,
-        # flux capacitor + time circuits -- the show pieces
-        "show props": 5.0,
+        # transition sequencer, arming lever and keypad
+        "sequencer + controls": 5.0,
         # DC bus bars from cell through SMES into the field run
         "DC bus bars": 30.0,
         # cryo loop plumbing joins the circulator figure below
@@ -6670,7 +6694,7 @@ def car_ops_ledger():
         ("hoops", 1.0e3, "armed",
          "hoop tune drifts -> the shell ends leak, transition degraded"),
         ("fluxcap", 0.005, "always",
-         "the LED dies -- only the audience notices"),
+         "sequencer fault -> no transition timing, run aborted on interlock"),
         ("bubble", 0.0, "on demand",
          "shell collapse -> the jump simply does not happen"),
         ("magsail", 0.2e3, "braking",
@@ -6807,7 +6831,7 @@ def car_part_mass():
         "rectenna": s("rectenna whip"),
         "deflector": s("deflector strip"),
         "hoops": s("shaping hoops"),
-        "fluxcap": s("show props"),
+        "fluxcap": s("sequencer + controls"),
         "bubble": 0.0,                      # a field has no rest mass
         "magsail": s("recovery loop"),
         "cryo": s("cryo loop + He", "coolant plumbing"),
@@ -6856,19 +6880,42 @@ def car_transit(t0_s, hop_s, lat_deg=ROAD_LAT_DEG, lon_deg=ROAD_LON_DEG):
 def _car_loft(stations):
     """Loft the coupe body: stations are (z, half_width, y_top, y_bot) and the
     section is an 8-vertex chamfered rectangle -- enough for the wedge nose,
-    the cabin step and the fastback tail to read at a glance."""
+    the cabin step and the fastback tail to read at a glance. VISUAL_DETAIL
+    subdivides the loft both ways: at 2x each section edge splits in two and
+    each station pair gains a mid-station, so the shell refines to four
+    times the facets while the wedge keeps every crease."""
     if not stations or not all(
             isinstance(s, (tuple, list)) and len(s) == 4
             and _finite(*s) for s in stations):
         return [], []
-    NV = 8
+    # the top clamp is part of the profile -- normalise BEFORE inserting
+    # mid-stations so the refined run follows the clamped silhouette
+    stations = [(s[0], s[1], max(s[2], s[3] + 0.12), s[3])
+                for s in stations]
+    sub = max(1, min(8, int(round(VISUAL_DETAIL))))
+    if sub > 1:                    # interpolated mid-stations along the run
+        fine = []
+        for k in range(len(stations) - 1):
+            s0, s1 = stations[k], stations[k + 1]
+            for j in range(sub):
+                t = j / sub
+                fine.append(tuple(
+                    s0[i] + (s1[i] - s0[i]) * t for i in range(4)))
+        fine.append(stations[-1])
+        stations = fine
+    NV = 8 * sub
     verts, faces = [], []
     for z, hw, yt, yb in stations:
-        yt = max(yt, yb + 0.12)
-        verts += [(-hw * 0.55, yb, z), (hw * 0.55, yb, z),
-                  (hw, yb + 0.10, z), (hw, yt - 0.16, z),
-                  (hw * 0.55, yt, z), (-hw * 0.55, yt, z),
-                  (-hw, yt - 0.16, z), (-hw, yb + 0.10, z)]
+        ring = [(-hw * 0.55, yb, z), (hw * 0.55, yb, z),
+                (hw, yb + 0.10, z), (hw, yt - 0.16, z),
+                (hw * 0.55, yt, z), (-hw * 0.55, yt, z),
+                (-hw, yt - 0.16, z), (-hw, yb + 0.10, z)]
+        for i in range(8):
+            p0, p1 = ring[i], ring[(i + 1) % 8]
+            for j in range(sub):
+                t = j / sub
+                verts.append((p0[0] + (p1[0] - p0[0]) * t,
+                              p0[1] + (p1[1] - p0[1]) * t, z))
     n = len(stations)
     for k in range(n - 1):
         for i in range(NV):
@@ -6918,7 +6965,7 @@ def _rod(p1, p2, r, seg=10):
 
 def _pipe_path(pts, r, seg=10, closed=True):
     """Sweep a circle along a polyline -- the external conduit runs that
-    BTTF fans will read instantly as the flux bands."""
+    engineering reader will read instantly as the field conduit run."""
     try:
         pts = [np.asarray(p, dtype=float).reshape(3) for p in pts]
     except (ValueError, TypeError):
@@ -6968,7 +7015,7 @@ def _pipe_path(pts, r, seg=10, closed=True):
 def _wire_ellipsoid(a, b, c):
     """Bubble wireframe: latitude ellipses plus three meridian loops, axes
     (a, b, c) along (x, y, z) -- the car's long axis is z."""
-    seg = 40
+    seg = _detail_seg(40)
     out = []
     for t in (-0.55, -0.18, 0.18, 0.55):
         y = b * math.sin(t * math.pi / 2)
@@ -6985,20 +7032,22 @@ def _wire_ellipsoid(a, b, c):
 
 
 def build_special_parts(detail=1.0):
-    """The WD-88 Foldmobile at true car scale. `detail` rescales
-    VISUAL_DETAIL for this build only (interaction LOD)."""
+    """The WD-88 Foldmobile at true car scale, meshed at CAR_MODEL_DETAIL
+    (2x) base resolution. The upscale refines the MODEL only -- double the
+    tessellation on every primitive, not a millimetre moved: the car stays
+    at 100% scale. `detail` rescales VISUAL_DETAIL on top of that for this
+    build only (interaction LOD)."""
     detail = clamp(_real(detail), 0.02, 4.0) \
         if _finite(_real(detail)) else 1.0
-    if detail != 1.0:
-        global VISUAL_DETAIL, _SEG_FLOOR
-        _old_vd, _old_sf = VISUAL_DETAIL, _SEG_FLOOR
-        VISUAL_DETAIL = _old_vd * detail
-        _SEG_FLOOR = max(4, min(64, int(round(6 * detail))))
-        try:
-            return _build_special_parts_impl()
-        finally:
-            VISUAL_DETAIL, _SEG_FLOOR = _old_vd, _old_sf
-    return _build_special_parts_impl()
+    eff = CAR_MODEL_DETAIL * detail
+    global VISUAL_DETAIL, _SEG_FLOOR
+    _old_vd, _old_sf = VISUAL_DETAIL, _SEG_FLOOR
+    VISUAL_DETAIL = _old_vd * eff
+    _SEG_FLOOR = max(4, min(64, int(round(6 * eff))))
+    try:
+        return _build_special_parts_impl()
+    finally:
+        VISUAL_DETAIL, _SEG_FLOOR = _old_vd, _old_sf
 
 
 def _build_special_parts_impl():
@@ -7116,7 +7165,8 @@ def _build_special_parts_impl():
         dv, df = _box(sx * 0.965, 0.30, 0.34, 0.015, 0.035, 0.14)
         meshes.append(Mesh(dv, df, C_HULL_DARK, ""))
     pv, pf = _box(0.0, -0.10, -2.216, 0.30, 0.14, 0.015)  # license plate
-    meshes.append(Mesh(pv, pf, _mix(C_WARN, C_TEXT, 0.3), "OUTATIME"))
+    meshes.append(Mesh(pv, pf, _mix(C_WARN, C_TEXT, 0.3),
+                       "registration plate"))
     # glazing -- wire outlines only: a fill quad would painter-occlude the
     # cabin from some orbits, and glass that reads AND never hides the
     # interior is wire glass
@@ -7265,14 +7315,848 @@ def _build_special_parts_impl():
     for sx in (-1, 1):                    # interior door pulls on the trims
         dpv, dpf = _box(sx * 0.755, 0.34, -0.10, 0.03, 0.04, 0.16)
         meshes.append(Mesh(dpv, dpf, _mix(C_HULL, C_HULL_DARK, 0.3), ""))
+    # ---- detail pass II: hinge line, toll panes, furniture, hardpoints ---
+    # the gull-wings swing off a roof spine rail -- the hinge housings are
+    # where the door plumbing visibly disappears into the roof
+    hvb2, hfb2 = _box(0.0, 0.935, -0.07, 0.07, 0.02, 0.86)
+    meshes.append(Mesh(hvb2, hfb2, C_HULL_DARK, "roof spine"))
+    for sx in (-1, 1):
+        for zh in (-0.38, -0.07, 0.24):
+            hv3, hf3 = _box(sx * 0.55, 0.94, zh, 0.18, 0.035, 0.05)
+            meshes.append(Mesh(hv3, hf3, C_HULL,
+                               "door hinge" if (sx > 0 and zh == -0.07)
+                               else ""))
+    for sx in (-1, 1):                   # toll windows: the small opening
+        dx = sx * 0.862                  # panes inside each door glass --
+        pts = [(dx, 0.52, 0.55), (dx * 0.985, 0.72, 0.44),   # the DMC
+               (dx * 0.985, 0.72, 0.12), (dx, 0.52, 0.10)]   # signature
+        meshes.append(Mesh(pts, [(0, 1, 2, 3)],
+                           _mix(C_BUBBLE, C_TEXT, 0.30),
+                           "toll window" if sx > 0 else "", wire=True))
+    for sx in (-1, 1):                   # seat backrests behind the bases
+        bkv, bkf = _box(sx * 0.34, 0.30, -0.55, 0.40, 0.50, 0.10)
+        meshes.append(Mesh(bkv, bkf, _mix(C_HULL_DARK, C_COLLECT, 0.25),
+                           "seat back" if sx > 0 else ""))
+    shv, shf = _box(0.0, 0.42, -0.56, 1.40, 0.025, 0.12)    # parcel shelf
+    meshes.append(Mesh(shv, shf, _mix(C_HULL_DARK, C_COLLECT, 0.3),
+                       "parcel shelf"))
+    for sx in (-1, 1):                   # armrests on the door trims
+        arv, arf = _box(sx * 0.775, 0.26, -0.05, 0.05, 0.05, 0.42)
+        meshes.append(Mesh(arv, arf, _mix(C_HULL_DARK, C_COLLECT, 0.35), ""))
+    # the speedo that matters: a dial ring on the binnacle with its needle
+    # parked up against the 88
+    spv, spf = _torus(0.032, 0.004, seg_major=18, seg_minor=6)
+    meshes.append(Mesh(_xform(spv, None, (-0.34, 0.475, 0.358)),
+                       spf, _mix(C_ACCENT, C_TEXT, 0.3), "speedo dial"))
+    ndv, ndf = _rod((-0.34, 0.475, 0.355), (-0.318, 0.498, 0.354),
+                    0.0025, seg=6)
+    meshes.append(Mesh(ndv, ndf, _mix(C_WARN, C_TEXT, 0.3), "88 needle"))
+    for sx in (-1, 1):                   # mirror glass in the mirror pods
+        mgv, mgf = _box(sx * 1.078, 0.57, 0.62, 0.006, 0.07, 0.11)
+        meshes.append(Mesh(mgv, mgf, _mix(C_BUBBLE, C_TEXT, 0.4),
+                           "mirror glass" if sx > 0 else ""))
+    for sx in (-1, 1):                   # washer jets at the cowl
+        wjv, wjf = _box(sx * 0.30, 0.535, 0.84, 0.02, 0.012, 0.03)
+        meshes.append(Mesh(wjv, wjf, C_HULL_DARK, ""))
+    # low-voltage aux battery in the front trunk -- hotel loads still draw
+    # while the fusion cell is dark; section view is where you see it
+    abv, abf = _box(0.52, -0.10, 1.60, 0.26, 0.20, 0.18)
+    meshes.append(Mesh(abv, abf, _mix(C_HULL_DARK, C_WARN, 0.25),
+                       "aux battery"))
+    for tx in (0.46, 0.58):                # battery posts
+        tbv, tbf = _solid_cylinder(0.02, 0.0, 0.035, seg=8)
+        meshes.append(Mesh(_xform(tbv, rot_x(-math.pi / 2),
+                                  (tx, 0.015, 1.60)), tbf, C_PYLON, ""))
+    # cabin + avionics heat exchanger behind the grille slot, fed by the
+    # air-dam inlets -- the loop has to dump SOMEWHERE even at the kerb
+    hvv, hvf = _box(0.0, -0.30, 2.10, 0.95, 0.24, 0.06)
+    meshes.append(Mesh(hvv, hvf, _mix(C_RADIATOR, C_HULL_DARK, 0.5),
+                       "cabin heat exchanger"))
+    for sx in (-1, 1):                     # dam inlets duct air to it
+        dcv, dcf = _box(sx * 0.45, -0.50, 2.00, 0.18, 0.06, 0.16)
+        meshes.append(Mesh(dcv, dcf, C_HULL_DARK, ""))
+    for zz in (0.55, -0.85):               # flat undertray panels
+        uv, uf = _box(0.0, -0.60, zz, 1.30, 0.02, 1.10)
+        meshes.append(Mesh(uv, uf, C_HULL_DARK,
+                           "undertray" if zz > 0 else ""))
+    for sx in (-1, 1):                     # jacking rails behind the sills
+        for zj in (0.95, -1.05):
+            jv, jf = _box(sx * 0.80, -0.58, zj, 0.16, 0.05, 0.30)
+            meshes.append(Mesh(jv, jf, C_PYLON, ""))
+    tev, tef = _torus(0.05, 0.012, seg_major=14, seg_minor=6)
+    meshes.append(Mesh(_xform(tev, rot_y(math.pi / 2),
+                              (0.0, -0.58, 2.12)), tef, C_PYLON,
+                       "tow eye"))
+    nvv, nvf = _box(0.0, 0.10, -2.212, 0.56, 0.05, 0.012)   # rear nameplate
+    meshes.append(Mesh(nvv, nvf, _mix(C_HULL, C_TEXT, 0.2),
+                       "DELOREAN letters"))
+    # ---- detail pass III: cabin controls, structure, seams --------------
+    for sx in (-1, 1):                   # column stalks: turn + wiper
+        stv, stf = _rod((-0.34, 0.33, 0.24),
+                        (-0.34 + sx * 0.09, 0.31, 0.20), 0.008, seg=6)
+        meshes.append(Mesh(stv, stf, C_HULL_DARK,
+                           "column stalk" if sx < 0 else ""))
+    igv, igf = _solid_cylinder(0.014, -0.02, 0.0, seg=8)    # ignition barrel
+    meshes.append(Mesh(_xform(igv, rot_y(math.pi / 4),
+                              (-0.30, 0.29, 0.27)), igf, C_PYLON,
+                       "ignition"))
+    tv5, tf5 = _torus(0.024, 0.0035, seg_major=16, seg_minor=6)
+    meshes.append(Mesh(_xform(tv5, None, (-0.26, 0.475, 0.358)),
+                       tf5, _mix(C_ACCENT, C_TEXT, 0.3),
+                       "boost dial"))      # second binnacle dial
+    sgv, sgf = _box(0.0, 0.215, 0.26, 0.10, 0.015, 0.14)    # selector gate
+    meshes.append(Mesh(sgv, sgf, _mix(C_HULL_DARK, C_PYLON, 0.3), ""))
+    sbt, sbtt = _box(0.0, 0.185, 0.26, 0.08, 0.045, 0.10)   # shift boot
+    meshes.append(Mesh(sbt, sbtt, _mix(C_HULL_DARK, C_COLLECT, 0.4), ""))
+    dpd, dpf2 = _box(-0.58, -0.16, 0.62, 0.10, 0.20, 0.03)  # dead pedal
+    meshes.append(Mesh(dpd, dpf2, _mix(C_PYLON, C_HULL_DARK, 0.4),
+                       "dead pedal"))
+    for sx in (-1, 1):                     # seat slide rails under bases
+        for rx in (-0.12, 0.12):
+            rlv, rlf = _box(sx * 0.34 + rx, -0.26, -0.28,
+                            0.05, 0.03, 0.48)
+            meshes.append(Mesh(rlv, rlf, C_PYLON,
+                               "seat rail" if (sx > 0 and rx > 0) else ""))
+    for sx in (-1, 1):                     # belt buckles beside consoles
+        buv, buf = _box(sx * 0.14, -0.02, -0.30, 0.04, 0.12, 0.04)
+        meshes.append(Mesh(buv, buf, _mix(C_BAD, C_HULL_DARK, 0.4),
+                           "buckle" if sx > 0 else ""))
+    for sx in (-1, 1):                     # belt anchors at C-pillar base
+        bav, baf = _box(sx * 0.80, 0.45, -0.48, 0.04, 0.06, 0.04)
+        meshes.append(Mesh(bav, baf, C_PYLON,
+                           "belt anchor" if sx > 0 else ""))
+    for sx in (-1, 1):                     # map pockets on door trims
+        mpv, mpf = _box(sx * 0.76, 0.05, -0.05, 0.03, 0.15, 0.25)
+        meshes.append(Mesh(mpv, mpf, _mix(C_HULL_DARK, C_COLLECT, 0.3), ""))
+    for sx in (-1, 1):                     # door lock pins on the sills
+        lpv, lpf = _solid_cylinder(0.008, 0.0, 0.04, seg=6)
+        meshes.append(Mesh(_xform(lpv, rot_x(-math.pi / 2),
+                                  (sx * 0.845, 0.49, -0.50)), lpf,
+                           C_PYLON, "lock pin" if sx > 0 else ""))
+    for sx in (-1, 1):                     # door speakers, lower trims
+        dsv, dsf = _solid_cylinder(0.045, -0.012, 0.012, seg=10)
+        meshes.append(Mesh(_xform(dsv, rot_y(sx * math.pi / 2),
+                                  (sx * 0.76, 0.0, 0.35)), dsf,
+                           _mix(C_HULL_DARK, C_TEXT, 0.2),
+                           "door speaker" if sx > 0 else ""))
+    for sx in (-1, 1):                     # window switches on armrests
+        wsv, wsf = _box(sx * 0.755, 0.29, 0.05, 0.02, 0.015, 0.08)
+        meshes.append(Mesh(wsv, wsf, C_HULL_DARK, ""))
+    for sx in (-1, 1):                     # demist vents at dash ends
+        vev, vef = _box(sx * 0.68, 0.475, 0.44, 0.10, 0.03, 0.05)
+        meshes.append(Mesh(vev, vef, C_HULL_DARK, ""))
+    hzv, hzf = _box(0.0, 0.465, 0.41, 0.03, 0.02, 0.03)     # hazard button
+    meshes.append(Mesh(hzv, hzf, _mix(C_BAD, C_TEXT, 0.3), "hazard"))
+    # roll bar: a real car this fast gets one -- legs beside the seats,
+    # top rail under the roof rail line, hidden from the side profile
+    rbv, rbf = _pipe_path(
+        [(-0.55, 0.0, -0.585), (-0.55, 0.68, -0.585),
+         (0.0, 0.78, -0.585), (0.55, 0.68, -0.585),
+         (0.55, 0.0, -0.585)], 0.028, seg=10, closed=False)
+    meshes.append(Mesh(rbv, rbf, C_PYLON, "roll bar"))
+    for sx in (-1, 1):                     # front frame rails + crush cans
+        frv, frf = _box(sx * 0.35, -0.25, 1.35, 0.12, 0.15, 1.00)
+        meshes.append(Mesh(frv, frf, C_HULL_DARK,
+                           "frame rail" if sx > 0 else ""))
+        ccv, ccf = _box(sx * 0.35, -0.25, 1.92, 0.14, 0.16, 0.24)
+        meshes.append(Mesh(ccv, ccf, _mix(C_HULL_DARK, C_PYLON, 0.3),
+                           "crush can" if sx > 0 else ""))
+    for sx in (-1, 1):                     # fender-to-door shut lines
+        dx2 = sx * 0.955
+        pts = [(dx2, -0.32, 0.88), (dx2, 0.44, 0.88)]
+        meshes.append(Mesh(pts, [(0, 1)],
+                           _mix(C_HULL_DARK, C_TEXT, 0.15), "", wire=True))
+    for gx in (-0.30, -0.10, 0.10, 0.30):    # slats inside the grille slot
+        gsv, gsf = _box(gx, -0.30, 2.192, 0.015, 0.06, 0.012)
+        meshes.append(Mesh(gsv, gsf, C_HULL_DARK,
+                           "grille slat" if gx == -0.10 else ""))
+    for sx in (-1, 1):                     # rear fascia impact pads
+        ppv, ppf = _box(sx * 0.42, -0.05, -2.212, 0.18, 0.10, 0.03)
+        meshes.append(Mesh(ppv, ppf, _mix(C_HULL_DARK, C_PYLON, 0.3), ""))
+    for sx in (-1, 1):                     # headlamp bezel outlines
+        hx = sx * 0.42
+        pts = [(hx - 0.19, 0.408, 1.78), (hx + 0.19, 0.408, 1.78),
+               (hx + 0.19, 0.408, 2.12), (hx - 0.19, 0.408, 2.12)]
+        meshes.append(Mesh(pts, [(0, 1, 2, 3)],
+                           _mix(C_HULL_DARK, C_TEXT, 0.2), "", wire=True))
+    for pts, tag in (                      # glass gaskets: a second quad
+            ([(-0.77, 0.52, 0.85), (0.77, 0.52, 0.85),     # 3 cm inside
+              (0.81, 0.88, 0.39), (-0.81, 0.88, 0.39)],
+             "windshield gasket"),
+            ([(-0.81, 0.88, -0.52), (0.81, 0.88, -0.52),
+              (0.83, 0.52, -1.03), (-0.83, 0.52, -1.03)],
+             "")):
+        meshes.append(Mesh(pts, [(0, 1, 2, 3)],
+                           _mix(C_HULL_DARK, C_TEXT, 0.12), tag,
+                           wire=True))
+    tfv, tff = _box(0.0, 0.10, -1.78, 1.20, 0.03, 0.50)     # trunk floor
+    meshes.append(Mesh(tfv, tff, C_HULL_DARK, "trunk floor"))
+    for sx in (-1, 1):                     # roof gutter rails
+        grv, grf = _rod((sx * 0.84, 0.905, 0.34),
+                        (sx * 0.84, 0.905, -0.48), 0.012, seg=6)
+        meshes.append(Mesh(grv, grf, C_HULL_DARK,
+                           "gutter rail" if sx > 0 else ""))
+    # fixed fire line to the cell bay -- the hand bottle stays in the
+    # footwell, but the trunk gets its own plumbed nozzle
+    fbv, fbf2 = _box(0.55, 0.15, -1.35, 0.10, 0.14, 0.10)
+    meshes.append(Mesh(fbv, fbf2, _mix(C_BAD, C_HULL_DARK, 0.3),
+                       "fire bottle"))
+    fnv, fnf = _pipe_path([(0.55, 0.22, -1.35), (0.42, 0.34, -1.50),
+                           (0.25, 0.40, -1.58)], 0.008, seg=6,
+                          closed=False)
+    meshes.append(Mesh(fnv, fnf, _mix(C_BAD, C_PYLON, 0.3), ""))
+    och, ochf = _box(-0.85, 0.10, -1.45, 0.08, 0.10, 0.12)  # charger box
+    meshes.append(Mesh(och, ochf, _mix(C_SMES, C_HULL_DARK, 0.5),
+                       "onboard charger"))
+    for zz in (0.32, -0.46):               # transition strobes on spine
+        stv2, stf2 = _box(0.0, 0.955, zz, 0.08, 0.02, 0.05)
+        meshes.append(Mesh(stv2, stf2, _mix(C_WARN, C_TEXT, 0.3),
+                           "transition strobe" if zz > 0 else "",
+                           hot=True))
+    # ---- detail pass IV: the cabin's last furniture ----------------------
+    # the wheel was a bare rim: three spokes and the horn pad with the DMC
+    _wt = rot_x(math.radians(-25))
+    _wo = (-0.34, 0.24, 0.12)
+    for p2 in ((0.165, 0.0, 0.0), (-0.165, 0.0, 0.0), (0.0, -0.15, 0.0)):
+        skv, skf = _rod((0.0, 0.0, 0.0), p2, 0.012, seg=6)
+        meshes.append(Mesh(_xform(skv, _wt, _wo), skf, C_HULL_DARK,
+                           "wheel spoke" if p2[0] > 0 else ""))
+    hpv, hpf = _solid_cylinder(0.05, -0.012, 0.012, seg=10)
+    meshes.append(Mesh(_xform(hpv, _wt, _wo), hpf,
+                       _mix(C_HULL_DARK, C_ACCENT, 0.3), "horn pad"))
+    for gx in (-0.42, -0.26):              # needles on the other dials
+        gnv, gnf = _rod((gx, 0.475, 0.351), (gx + 0.014, 0.489, 0.350),
+                        0.002, seg=6)
+        meshes.append(Mesh(gnv, gnf, _mix(C_WARN, C_TEXT, 0.3), ""))
+    kbn, kbnf = _sphere(0.028, seg=10, rings=7)              # selector knob
+    meshes.append(Mesh(_xform(kbn, None, (0.0, 0.31, 0.24)),
+                       kbnf, C_HULL_DARK, "selector knob"))
+    for sx in (-1, 1):                     # knee bolsters under the dash
+        kbv, kbf2 = _box(sx * 0.34, 0.30, 0.44, 0.50, 0.10, 0.08)
+        meshes.append(Mesh(kbv, kbf2, _mix(C_HULL_DARK, C_COLLECT, 0.2), ""))
+    ashv, ashf = _box(0.0, 0.21, -0.15, 0.10, 0.02, 0.12)   # ashtray --
+    meshes.append(Mesh(ashv, ashf, _mix(C_PYLON, C_HULL_DARK, 0.3),
+                       "ashtray"))                            # it is 1981
+    ltv, ltf = _solid_cylinder(0.012, -0.01, 0.01, seg=8)
+    meshes.append(Mesh(_xform(ltv, rot_x(-math.pi / 2),
+                              (0.07, 0.21, -0.15)), ltf, C_PYLON, ""))
+    capv, capf = _box(0.0, 0.22, -0.10, 0.20, 0.03, 0.25)   # console pad
+    meshes.append(Mesh(capv, capf, _mix(C_HULL_DARK, C_COLLECT, 0.35), ""))
+    fwv, fwf = _box(0.0, -0.15, 0.65, 1.60, 0.90, 0.04)     # firewall
+    meshes.append(Mesh(fwv, fwf, _mix(C_HULL_DARK, C_PYLON, 0.2),
+                       "firewall"))
+    fxv, fxf = _box(0.45, 0.15, 0.48, 0.25, 0.10, 0.06)     # fuse/relay box
+    meshes.append(Mesh(fxv, fxf, _mix(C_ACCENT, C_HULL_DARK, 0.5),
+                       "fuse box"))
+    blv, blf = _solid_cylinder(0.06, -0.05, 0.05, seg=10)   # cabin blower
+    meshes.append(Mesh(_xform(blv, rot_y(math.pi / 2),
+                              (0.0, 0.15, 0.50)), blf, C_PYLON,
+                       "blower motor"))
+    for sx in (-1, 1):                     # demist ducts blower -> vents
+        duv, duf = _pipe_path([(0.0, 0.15, 0.50), (sx * 0.5, 0.35, 0.46),
+                               (sx * 0.66, 0.44, 0.44)], 0.014, seg=6,
+                              closed=False)
+        meshes.append(Mesh(duv, duf, C_HULL_DARK, ""))
+    for sx in (-1, 1):                     # headrest stems
+        for rx in (-0.07, 0.07):
+            hsv, hsf = _rod((sx * 0.34 + rx, 0.12, -0.50),
+                            (sx * 0.34 + rx, 0.24, -0.50), 0.010, seg=6)
+            meshes.append(Mesh(hsv, hsf, C_PYLON, ""))
+    for sx in (-1, 1):                     # belt retractor covers
+        rcv, rcf = _box(sx * 0.80, 0.15, -0.50, 0.05, 0.10, 0.05)
+        meshes.append(Mesh(rcv, rcf, C_HULL_DARK,
+                           "retractor" if sx > 0 else ""))
+    for sx in (-1, 1):                     # grab handles on the header
+        ghv, ghf = _box(sx * 0.55, 0.865, 0.34, 0.14, 0.02, 0.05)
+        meshes.append(Mesh(ghv, ghf, C_HULL_DARK, ""))
+    for sx in (-1, 1):                     # map lights beside the dome
+        mlv, mlf = _box(sx * 0.30, 0.86, 0.30, 0.08, 0.015, 0.05)
+        meshes.append(Mesh(mlv, mlf, _mix(C_TEXT, C_WARN, 0.5), ""))
+    for lx in (-0.44, -0.24):              # the driver's legs reach the
+        lgv, lgf = _box(lx, -0.15, -0.05, 0.14, 0.14, 0.45)  # footwell too
+        meshes.append(Mesh(lgv, lgf, _mix(C_ACCENT, C_HULL_DARK, 0.45), ""))
+    vis, visf = _box(-0.34, 0.49, -0.335, 0.12, 0.05, 0.02)  # helmet visor
+    meshes.append(Mesh(vis, visf, _mix(C_BUBBLE, C_TEXT, 0.35), ""))
+    # the emergency abort the test crew demanded: red mushroom on the dash
+    esv, esf = _rod((0.20, 0.44, 0.38), (0.20, 0.50, 0.38), 0.020, seg=8)
+    meshes.append(Mesh(esv, esf, C_PYLON, ""))
+    esc, escf = _sphere(0.030, seg=10, rings=7)
+    meshes.append(Mesh(_xform(esc, None, (0.20, 0.51, 0.38)),
+                       escf, C_BAD, "field abort"))
+    dlg, dlgf = _box(0.45, 0.47, -0.55, 0.20, 0.06, 0.10)   # data logger
+    meshes.append(Mesh(dlg, dlgf, _mix(C_ACCENT, C_HULL_DARK, 0.55),
+                       "data logger"))
+    mdu, mduf = _solid_cylinder(0.04, -0.02, 0.02, seg=10)  # main disconnect
+    meshes.append(Mesh(_xform(mdu, rot_y(math.pi / 2),
+                              (0.13, 0.12, -0.02)), mduf,
+                       _mix(C_WARN, C_HULL_DARK, 0.4), "master disconnect"))
+    # ---- the structure under the styling --------------------------------
+    hpv2, hpf2 = _box(0.0, 0.38, 1.45, 1.40, 0.015, 0.90)   # hood insul pad
+    meshes.append(Mesh(hpv2, hpf2, _mix(C_HULL_DARK, C_COLLECT, 0.2), ""))
+    wbv, wbf = _box(0.60, -0.05, 1.75, 0.15, 0.12, 0.15)    # washer bottle
+    meshes.append(Mesh(wbv, wbf, _mix(C_RCS, C_HULL, 0.4), "washer bottle"))
+    wnv, wnf = _solid_cylinder(0.02, -0.02, 0.05, seg=8)
+    meshes.append(Mesh(_xform(wnv, rot_x(-math.pi / 2),
+                              (0.60, 0.03, 1.72)), wnf, C_PYLON, ""))
+    bbv2, bbf2 = _box(0.0, -0.25, 2.10, 1.30, 0.10, 0.06)   # bumper beams
+    meshes.append(Mesh(bbv2, bbf2, C_PYLON, "bumper beam"))
+    bbr, bbrf = _box(0.0, -0.12, -2.10, 1.30, 0.10, 0.06)
+    meshes.append(Mesh(bbr, bbrf, C_PYLON, ""))
+    for sx in (-1, 1):                     # rear recovery loops
+        rrv, rrf = _torus(0.04, 0.012, seg_major=12, seg_minor=6)
+        meshes.append(Mesh(_xform(rrv, rot_y(math.pi / 2),
+                                  (sx * 0.50, -0.55, -2.14)), rrf, C_PYLON,
+                           "recovery loop" if sx > 0 else ""))
+    for sx in (-1, 1):                     # decklid hinges + prop struts
+        dhv, dhf = _box(sx * 0.50, deck_top(-2.0) - 0.02, -2.03,
+                        0.10, 0.04, 0.08)
+        meshes.append(Mesh(dhv, dhf, C_HULL,
+                           "deck hinge" if sx > 0 else ""))
+        dsv2, dsf2 = _rod((sx * 0.55, 0.55, -1.75),
+                          (sx * 0.60, 0.32, -1.95), 0.012, seg=6)
+        meshes.append(Mesh(dsv2, dsf2, C_PYLON, ""))
+    pts = [(0.15, deck_top(-1.35) + 0.006, -1.35),         # fuel service
+           (0.75, deck_top(-1.35) + 0.006, -1.35),         # hatch: where the
+           (0.75, deck_top(-1.85) + 0.006, -1.85),         # cell is worked on
+           (0.15, deck_top(-1.85) + 0.006, -1.85)]
+    meshes.append(Mesh(pts, [(0, 1, 2, 3)],
+                       _mix(C_HULL_DARK, C_TEXT, 0.15),
+                       "service hatch", wire=True))
+    for sx in (-1, 1):                     # hatch latches
+        hlv, hlf = _box(sx * 0.28 + 0.17, deck_top(-1.35) + 0.01, -1.35,
+                        0.05, 0.015, 0.04)
+        meshes.append(Mesh(hlv, hlf, C_PYLON, ""))
+    blg, blgf = _box(0.0, deck_top(-1.85) + 0.005, -1.85,   # cell bleed vent
+                     0.30, 0.012, 0.15)
+    meshes.append(Mesh(blg, blgf, C_HULL_DARK, "cell vent"))
+    for sx in (-1, 1):                     # wiper pivots at the cowl
+        wpv, wpf = _solid_cylinder(0.015, -0.01, 0.01, seg=8)
+        meshes.append(Mesh(_xform(wpv, rot_x(math.pi / 2),
+                                  (sx * 0.55, 0.52, 0.865)), wpf,
+                           C_HULL_DARK, ""))
+    for sx in (-1, 1):                     # A-pillar exterior covers
+        apv, apf = _rod((sx * 0.862, 0.46, 0.84),
+                        (sx * 0.842, 0.88, 0.38), 0.015, seg=6)
+        meshes.append(Mesh(apv, apf, _mix(C_HULL_DARK, C_HULL, 0.2), ""))
+    for sx in (-1, 1):                     # mud flaps behind every wheel
+        for zz in (0.72, -1.92):
+            mfv, mff = _box(sx * 0.86, -0.80, zz, 0.02, 0.12, 0.20)
+            meshes.append(Mesh(mfv, mff, _mix(C_HULL_DARK, C_PYLON, 0.3),
+                               "mud flap" if (sx > 0 and zz > 0) else ""))
+    for sx in (-1, 1):                     # stone guards before the rears
+        sgv, sgf = _box(sx * 0.96, -0.45, -0.85, 0.015, 0.10, 0.25)
+        meshes.append(Mesh(sgv, sgf, _mix(C_HULL, C_HULL_DARK, 0.3), ""))
+    for sx in (-1, 1):                     # door-roof shut lines
+        pts = [(sx * 0.80, 0.935, 0.36), (sx * 0.80, 0.935, -0.50)]
+        meshes.append(Mesh(pts, [(0, 1)],
+                           _mix(C_HULL_DARK, C_TEXT, 0.15), "", wire=True))
+    for sx in (-1, 1):                     # trunk side trim panels
+        ttv, ttf = _box(sx * 0.62, 0.15, -1.75, 0.03, 0.25, 0.45)
+        meshes.append(Mesh(ttv, ttf, _mix(C_HULL_DARK, C_COLLECT, 0.3), ""))
+    jkv, jkf = _box(-0.55, 0.12, -1.80, 0.10, 0.06, 0.20)   # the jack lives
+    meshes.append(Mesh(jkv, jkf, C_PYLON, "jack"))          # in the trunk
+    # ---- detail pass V: the cabin's small hardware -----------------------
+    gbv2, gbf2 = _solid_cylinder(0.008, -0.01, 0.01, seg=8)  # glovebox lock
+    meshes.append(Mesh(_xform(gbv2, rot_x(math.pi / 2),
+                              (0.30, 0.36, 0.443)), gbf2, C_PYLON,
+                       "glovebox lock"))
+    for sx in (-1, 1):                     # floor mats over the floor pan
+        fmv2, fmf2 = _box(sx * 0.34, -0.265, 0.20, 0.50, 0.015, 0.60)
+        meshes.append(Mesh(fmv2, fmf2, _mix(C_HULL_DARK, C_COLLECT, 0.15),
+                           "floor mat" if sx > 0 else ""))
+    for sx in (-1, 1):                     # kick panels at the footwells
+        kpv, kpf = _box(sx * 0.78, -0.10, 0.55, 0.04, 0.25, 0.30)
+        meshes.append(Mesh(kpv, kpf, _mix(C_HULL_DARK, C_COLLECT, 0.25), ""))
+    tlv, tlf = _box(-0.55, 0.30, -1.90, 0.08, 0.02, 0.05)   # trunk light
+    meshes.append(Mesh(tlv, tlf, _mix(C_TEXT, C_WARN, 0.5), "trunk light"))
+    flv, flf = _box(0.0, 0.37, 1.85, 0.10, 0.015, 0.06)     # frunk light
+    meshes.append(Mesh(flv, flf, _mix(C_TEXT, C_WARN, 0.5), "frunk light"))
+    for sx in (-1, 1):                     # hood bump stops at the nose
+        hbv, hbf = _box(sx * 0.55, 0.33, 1.85, 0.04, 0.04, 0.04)
+        meshes.append(Mesh(hbv, hbf, _mix(C_HULL_DARK, C_PYLON, 0.4), ""))
+    # the late-car option: a small ducktail lip on the decklid edge
+    dkv, dkf = _box(0.0, deck_top(-2.02) + 0.015, -2.02, 1.05, 0.02, 0.10)
+    meshes.append(Mesh(dkv, dkf, _mix(C_HULL, C_HULL_DARK, 0.25),
+                       "deck spoiler"))
+    for sx in (-1, 1):                     # reverse lamps in the fascia
+        rsv, rsf = _box(sx * 0.30, -0.16, -2.212, 0.14, 0.05, 0.012)
+        meshes.append(Mesh(rsv, rsf, _mix(C_TEXT, C_BUBBLE, 0.4),
+                           "reverse lamp" if sx > 0 else ""))
+    rmv, rmf = _rod((0.80, 0.42, 0.86), (0.80, 0.68, 0.86),  # radio mast on
+                    0.008, seg=6)                          # the fender
+    meshes.append(Mesh(rmv, rmf, C_HULL_DARK, "radio mast"))
+    rmb, rmbf = _solid_cylinder(0.02, -0.01, 0.01, seg=8)
+    meshes.append(Mesh(_xform(rmb, rot_x(math.pi / 2),
+                              (0.80, 0.42, 0.86)), rmbf, C_PYLON, ""))
+    whv, whf = _pipe_path([(0.60, 0.03, 1.72), (0.45, 0.30, 1.15),
+                           (0.35, 0.45, 0.88), (0.30, 0.52, 0.84)],
+                          0.006, seg=6, closed=False)       # washer hose
+    meshes.append(Mesh(whv, whf, C_HULL_DARK, "washer hose"))
+    wh2, wh2f = _pipe_path([(0.30, 0.505, 0.84), (0.0, 0.505, 0.86),
+                            (-0.30, 0.51, 0.84)], 0.005, seg=6,
+                           closed=False)
+    meshes.append(Mesh(wh2, wh2f, C_HULL_DARK, ""))
+    wmv, wmf = _solid_cylinder(0.04, -0.04, 0.04, seg=10)   # wiper motor
+    meshes.append(Mesh(_xform(wmv, rot_y(math.pi / 2),
+                              (0.0, 0.38, 0.86)), wmf, C_PYLON,
+                       "wiper motor"))
+    for sx in (-1, 1):                     # wiper links motor -> pivots
+        wlv, wlf = _rod((0.0, 0.42, 0.86), (sx * 0.50, 0.50, 0.86),
+                        0.006, seg=6)
+        meshes.append(Mesh(wlv, wlf, C_PYLON, ""))
+    csv, csf = _box(-0.34, 0.32, 0.24, 0.08, 0.10, 0.10)    # column shell
+    meshes.append(Mesh(csv, csf, _mix(C_HULL_DARK, C_COLLECT, 0.2),
+                       "column shell"))
+    for px in (-0.44, -0.26):              # rubber pads on the pedals
+        ppv2, ppf2 = _box(px, -0.16, 0.582, 0.08, 0.14, 0.012)
+        meshes.append(Mesh(ppv2, ppf2, _mix(C_HULL_DARK, C_PYLON, 0.4),
+                           "pedal pad" if px < -0.3 else ""))
+    qpv, qpf = _box(0.075, 0.21, 0.26, 0.03, 0.012, 0.12)   # shift quadrant
+    meshes.append(Mesh(qpv, qpf, _mix(C_ACCENT, C_HULL_DARK, 0.5),
+                       "quadrant"))
+    for sx in (-1, 1):                     # courtesy lamps in trim bottoms
+        clv, clf = _box(sx * 0.76, 0.0, 0.05, 0.02, 0.02, 0.06)
+        meshes.append(Mesh(clv, clf, _mix(C_WARN, C_TEXT, 0.4),
+                           "courtesy lamp" if sx > 0 else ""))
+    for sx in (-1, 1):                     # footwell lamps under the dash
+        ftv, ftf = _box(sx * 0.30, 0.05, 0.55, 0.04, 0.02, 0.03)
+        meshes.append(Mesh(ftv, ftf, _mix(C_TEXT, C_WARN, 0.5), ""))
+    for sx in (-1, 1):                     # belt guides on backrest tops
+        bgv, bgf = _box(sx * 0.50, 0.52, -0.53, 0.04, 0.03, 0.04)
+        meshes.append(Mesh(bgv, bgf, C_PYLON, ""))
+    for hx in (-0.04, 0.04):               # HVAC sliders on the radio face
+        hs2, hsf2 = _box(hx, 0.24, 0.315, 0.02, 0.008, 0.008)
+        meshes.append(Mesh(hs2, hsf2, _mix(C_PYLON, C_TEXT, 0.2), ""))
+    mjv, mjf = _box(0.72, 0.35, 0.30, 0.02, 0.02, 0.04)     # mirror joystick
+    meshes.append(Mesh(mjv, mjf, C_PYLON, "mirror joystick"))
+    for sx in (-1, 1):                     # door striker pins on the spine
+        spv4, spf4 = _solid_cylinder(0.012, -0.03, 0.0, seg=8)
+        meshes.append(Mesh(_xform(spv4, rot_x(math.pi / 2),
+                                  (sx * 0.80, 0.90, -0.05)), spf4,
+                           C_PYLON, "striker pin" if sx > 0 else ""))
+    for sx in (-1, 1):                     # sealed beams under the doors
+        sbv2, sbf2 = _solid_cylinder(0.10, -0.015, 0.015, seg=14)
+        meshes.append(Mesh(_xform(sbv2, rot_x(-math.pi / 2),
+                                  (sx * 0.42, 0.35, 1.95)), sbf2,
+                           _mix(C_TEXT, C_WARN, 0.3),
+                           "sealed beam" if sx > 0 else ""))
+    bsv2, bsf2 = _box(0.52, 0.005, 1.60, 0.28, 0.02, 0.20)  # battery strap
+    meshes.append(Mesh(bsv2, bsf2, _mix(C_HULL_DARK, C_PYLON, 0.3),
+                       "battery strap"))
+    # ---- detail pass VI: the last of the cabin + bay hardware ------------
+    # gull-wing reach straps hang inside the doors' trailing edges -- they
+    # close from the roof, so the strap is the only way down
+    for sx in (-1, 1):
+        psv, psf = _rod((sx * 0.78, 0.88, -0.30),
+                        (sx * 0.78, 0.68, -0.30), 0.010, seg=6)
+        meshes.append(Mesh(psv, psf, _mix(C_HULL_DARK, C_COLLECT, 0.4),
+                           "pull strap" if sx > 0 else ""))
+    for sx in (-1, 1):                       # inner A-pillar trim covers
+        atv, atf = _rod((sx * 0.82, 0.48, 0.80),
+                        (sx * 0.80, 0.84, 0.42), 0.016, seg=6)
+        meshes.append(Mesh(atv, atf, _mix(C_HULL_DARK, C_COLLECT, 0.3), ""))
+    for sx in (-1, 1):                       # speaker grilles in the shelf
+        sgv2, sgf2 = _solid_cylinder(0.05, -0.008, 0.008, seg=10)
+        meshes.append(Mesh(_xform(sgv2, rot_x(math.pi / 2),
+                                  (sx * 0.45, 0.44, -0.56)), sgf2,
+                           C_HULL_DARK,
+                           "shelf speaker" if sx > 0 else ""))
+    # rear-glass demister grid -- four heater wires across the pane
+    for t in (0.22, 0.42, 0.62, 0.82):
+        xw = 0.84 + 0.02 * t
+        pts = [(-xw, 0.90 - 0.38 * t, -0.51 - 0.54 * t),
+               (xw, 0.90 - 0.38 * t, -0.51 - 0.54 * t)]
+        meshes.append(Mesh(pts, [(0, 1)],
+                           _mix(C_HULL_DARK, C_WARN, 0.25),
+                           "demister grid" if t == 0.22 else "", wire=True))
+    for sx in (-1, 1):                       # door weather seals -- inner
+        dxs = sx * 0.945                     # line inside the gull-wing seam
+        pts = [(dxs, -0.30, 0.82), (dxs, -0.30, -0.97),
+               (dxs, 0.47, -0.97), (dxs, 0.47, 0.82)]
+        meshes.append(Mesh(pts, [(0, 1, 2, 3)],
+                           _mix(C_HULL_DARK, C_PYLON, 0.3),
+                           "door seal" if sx > 0 else "", wire=True))
+    for sx in (-1, 1):                       # mirror gaskets at stalk feet
+        msv, msf = _box(sx * 0.905, 0.50, 0.62, 0.02, 0.05, 0.08)
+        meshes.append(Mesh(msv, msf, C_HULL_DARK, ""))
+    acv, acf = _rod((0.80, 0.42, 0.86), (0.75, 0.30, 0.62), 0.005, seg=6)
+    meshes.append(Mesh(acv, acf, C_HULL_DARK, "antenna coax"))
+    for sx in (-1, 1):                       # pop-up lamp lift motors and
+        lmv, lmf = _solid_cylinder(0.035, -0.04, 0.04, seg=10)
+        meshes.append(Mesh(_xform(lmv, rot_y(math.pi / 2),      # link arms --
+                                  (sx * 0.42, 0.28, 2.02)), lmf,  # stowed or
+                           C_PYLON, "lift motor" if sx > 0 else ""))  # not, the
+        llv, llf = _rod((sx * 0.42, 0.30, 2.00),                # mechanism is
+                        (sx * 0.42, 0.37, 1.95), 0.010, seg=6)  # still aboard
+        meshes.append(Mesh(llv, llf, C_PYLON, ""))
+    crf2, crf2f = _box(0.0, -0.18, 2.14, 1.10, 0.20, 0.04)   # fascia foam
+    meshes.append(Mesh(crf2, crf2f, _mix(C_HULL_DARK, C_COLLECT, 0.15),
+                       "crash foam"))
+    hnv, hnf = _solid_cylinder(0.06, -0.03, 0.03, seg=10)    # the horn
+    meshes.append(Mesh(_xform(hnv, rot_x(math.pi / 2),
+                              (0.35, -0.28, 2.12)), hnf, C_PYLON,
+                       "horn"))
+    for sx in (-1, 1):                       # hood hinges at the cowl +
+        hhv, hhf = _box(sx * 0.50, 0.50, 0.92, 0.12, 0.03, 0.05)
+        meshes.append(Mesh(hhv, hhf, C_HULL,
+                           "hood hinge" if sx > 0 else ""))
+        hsv4, hsf4 = _rod((sx * 0.55, 0.44, 1.05),           # frunk struts
+                          (sx * 0.60, 0.28, 1.35), 0.012, seg=6)
+        meshes.append(Mesh(hsv4, hsf4, C_PYLON, ""))
+    hlv2, hlf2 = _box(0.0, 0.30, 2.00, 0.10, 0.05, 0.04)     # hood striker
+    meshes.append(Mesh(hlv2, hlf2, C_PYLON, "hood striker"))
+    hrv, hrf = _pipe_path([(-0.20, 0.10, 0.48), (-0.35, 0.05, 0.70),
+                           (-0.30, 0.10, 1.20), (-0.10, 0.25, 1.95)],
+                          0.006, seg=6, closed=False)        # release cable
+    meshes.append(Mesh(hrv, hrf, C_HULL_DARK, "hood release"))
+    # cowl intake feeds the blower -- cabin air comes in at the screen base
+    civ, cif = _pipe_path([(0.0, 0.50, 0.82), (0.0, 0.35, 0.60),
+                           (0.0, 0.15, 0.50)], 0.025, seg=8, closed=False)
+    meshes.append(Mesh(civ, cif, C_HULL_DARK, "cowl intake"))
+    hcv3, hcf3 = _box(0.0, 0.20, 0.50, 0.16, 0.12, 0.08)     # heater core
+    meshes.append(Mesh(hcv3, hcf3, _mix(C_RADIATOR, C_HULL_DARK, 0.45),
+                       "heater core"))
+    for sx in (-1, 1):                         # its hoses through the firewall
+        hhv2, hhf2 = _pipe_path([(sx * 0.06, 0.20, 0.50),
+                                 (sx * 0.20, 0.05, 0.80),
+                                 (sx * 0.30, -0.15, 1.60),
+                                 (sx * 0.30, -0.22, 2.04)], 0.009, seg=6,
+                                closed=False)
+        meshes.append(Mesh(hhv2, hhf2, _mix(C_RADIATOR, C_PYLON, 0.35), ""))
+    # LV wiring honesty: the aux battery feeds the fuse box and grounds
+    # to the frame rail -- a car with a dead 12 V bus drives nothing
+    btv, btf = _pipe_path([(0.52, 0.02, 1.60), (0.45, 0.10, 1.00),
+                           (0.45, 0.13, 0.55)], 0.010, seg=6, closed=False)
+    meshes.append(Mesh(btv, btf, _mix(C_WARN, C_PYLON, 0.4), "battery cable"))
+    bgv2, bgf2 = _rod((0.60, -0.10, 1.60), (0.60, -0.20, 1.42),
+                      0.008, seg=6)
+    meshes.append(Mesh(bgv2, bgf2, C_PYLON, "battery ground"))
+    for sx in (-1, 1):                         # tunnel heat shields over
+        tsv3, tsf3 = _box(sx * 0.30, -0.52, 0.30, 0.20, 0.015, 0.80)
+        meshes.append(Mesh(tsv3, tsf3, _mix(C_PYLON, C_HULL, 0.2), ""))
+    for sx in (-1, 1):                         # floor access covers over
+        acv2, acf2 = _torus(0.10, 0.006, seg_major=16, seg_minor=5)
+        meshes.append(Mesh(_xform(acv2, None, (sx * 0.40, -0.268, -0.60)),
+                           acf2, _mix(C_PYLON, C_TEXT, 0.2),
+                           "access cover" if sx > 0 else "", wire=True))
+    ckv, ckf = _box(-0.34, 0.29, 0.30, 0.01, 0.01, 0.02)      # trip knob
+    meshes.append(Mesh(ckv, ckf, C_PYLON, "trip knob"))
+    cbn, cbnf = _box(0.0, 0.16, 0.42, 0.16, 0.05, 0.10)       # console bin
+    meshes.append(Mesh(cbn, cbnf, _mix(C_HULL_DARK, C_COLLECT, 0.4),
+                       "console bin"))
+    vmv2, vmf2 = _box(0.34, 0.845, 0.40, 0.20, 0.01, 0.10)    # vanity mirror
+    meshes.append(Mesh(vmv2, vmf2, _mix(C_BUBBLE, C_TEXT, 0.35), ""))
+    bpv, bpf = _box(0.0, 0.35, -0.615, 0.50, 0.30, 0.02)      # bulkhead panel
+    meshes.append(Mesh(bpv, bpf, _mix(C_HULL_DARK, C_PYLON, 0.25),
+                       "bulkhead panel"))
+    tov, tof = _box(-0.48, 0.14, -1.75, 0.18, 0.10, 0.12)     # tool bag
+    meshes.append(Mesh(tov, tof, _mix(C_HULL_DARK, C_COLLECT, 0.4),
+                       "tool bag"))
+    dlv3, dlf3 = _box(0.0, 0.42, -1.56, 0.08, 0.05, 0.05)     # decklid latch
+    meshes.append(Mesh(dlv3, dlf3, C_PYLON, "deck latch"))
+    # ---- detail pass VII: closing the last gaps ----------------------------
+    # the column ended at the dash and the rack sat unwired -- the
+    # intermediate shaft runs through the firewall to the rack, with a
+    # U-joint where it turns down -- this car steers by wheel, so the
+    # column-to-rack linkage stays mechanical
+    ssh, sshf = _rod((-0.34, 0.26, 0.15), (-0.30, -0.50, 1.25),
+                     0.018, seg=8)
+    meshes.append(Mesh(ssh, sshf, C_PYLON, "steering shaft"))
+    ujv, ujf = _box(-0.30, -0.50, 1.26, 0.05, 0.05, 0.05)
+    meshes.append(Mesh(ujv, ujf, C_PYLON, ""))
+    clk, clkf = _box(0.10, 0.49, 0.40, 0.08, 0.02, 0.05)      # dash clock --
+    meshes.append(Mesh(clk, clkf, _mix(C_ACCENT, C_HULL_DARK, 0.5),
+                       "dash clock"))                          # still 1981
+    fpv2, fpf2 = _rod((0.30, 0.42, 0.42), (0.30, 0.40, 0.46),  # fire pull
+                      0.012, seg=6)
+    meshes.append(Mesh(fpv2, fpf2, _mix(C_BAD, C_PYLON, 0.3), "fire pull"))
+    tpt, tptf = _box(-0.44, -0.14, 0.63, 0.04, 0.05, 0.02)     # throttle pot
+    meshes.append(Mesh(tpt, tptf, _mix(C_ACCENT, C_HULL_DARK, 0.5),
+                       "throttle pot"))
+    vin, vinf = _box(-0.60, 0.515, 0.855, 0.08, 0.008, 0.025)  # VIN plate --
+    meshes.append(Mesh(vin, vinf, _mix(C_TEXT, C_HULL, 0.3),   # readable
+                       "VIN plate"))                           # through the
+    ist, istf = _box(-0.70, 0.55, 0.86, 0.03, 0.03, 0.008)     # screen
+    meshes.append(Mesh(ist, istf, _mix(C_WARN, C_TEXT, 0.4),
+                       "inspection sticker"))
+    for bx, by in ((-0.05, 0.62), (0.05, 0.62), (-0.05, 0.54),
+                   (0.05, 0.54)):                              # the Y hub is
+        cbv2, cbf2 = _solid_cylinder(0.010, -0.01, 0.01, seg=6)
+        meshes.append(Mesh(_xform(cbv2, rot_x(math.pi / 2),
+                                  (bx, by, -0.59)), cbf2, C_PYLON,
+                           "cap bolt" if (bx > 0 and by > 0.6) else ""))
+    trgv, trgf = _box(-0.30, 0.12, -1.90, 0.20, 0.06, 0.04)    # warning tri.
+    meshes.append(Mesh(trgv, trgf, _mix(C_WARN, C_BAD, 0.35),
+                       "warning triangle"))
+    wcv, wcf = _box(0.52, 0.10, -1.90, 0.10, 0.08, 0.12)       # wheel chock
+    meshes.append(Mesh(wcv, wcf, _mix(C_PYLON, C_WARN, 0.25), "wheel chock"))
+    for sx in (-1, 1):                        # cargo net hooks in trunk
+        chv2, chf2 = _box(sx * 0.58, 0.22, -1.55, 0.03, 0.03, 0.03)
+        meshes.append(Mesh(chv2, chf2, C_PYLON, ""))
+    sal, salf = _box(0.42, -0.10, -0.28, 0.10, 0.03, 0.03)     # seat lever
+    meshes.append(Mesh(sal, salf, C_PYLON, "seat lever"))
+    for sx in (-1, 1):                        # visor pivot rods to header
+        vpv, vpf = _rod((sx * 0.34, 0.845, 0.40),
+                        (sx * 0.34, 0.87, 0.36), 0.008, seg=6)
+        meshes.append(Mesh(vpv, vpf, C_PYLON, ""))
+    for sx in (-1, 1):                        # sill striker plates under
+        spv5, spf5 = _box(sx * 0.82, -0.18, -0.10, 0.08, 0.02, 0.15)
+        meshes.append(Mesh(spv5, spf5, C_PYLON,               # the door jaws
+                           "sill striker" if sx > 0 else ""))
+    glv, glf = _box(0.30, 0.33, 0.44, 0.04, 0.01, 0.02)       # glovebox lamp
+    meshes.append(Mesh(glv, glf, _mix(C_TEXT, C_WARN, 0.5), ""))
+    dmv, dmf = _rod((0.0, 0.80, 0.40), (0.0, 0.78, 0.42),      # mirror dim
+                    0.006, seg=6)                              # tab
+    meshes.append(Mesh(dmv, dmf, C_PYLON, ""))
+    # ---- detail pass VIII: the backbone chassis and last systems ---------
+    # the DMC's signature steel spine runs the floor's length; the rear
+    # forks carry the drivetrain bay -- in our car, the hub drives
+    bkv, bkf = _box(0.0, -0.45, 0.40, 0.18, 0.14, 2.40)
+    meshes.append(Mesh(bkv, bkf, _mix(C_PYLON, C_HULL_DARK, 0.3),
+                       "backbone"))
+    for sx in (-1, 1):                       # rear forks backbone -> hubs
+        rfv, rff = _rod((sx * 0.10, -0.45, -0.80),
+                        (sx * 0.75, -0.50, -1.45), 0.025, seg=8)
+        meshes.append(Mesh(rfv, rff, C_PYLON,
+                           "rear subframe" if sx > 0 else ""))
+    rcv, rcf = _rod((-0.65, -0.50, -1.30), (0.65, -0.50, -1.30),
+                    0.022, seg=8)
+    meshes.append(Mesh(rcv, rcf, C_PYLON, ""))
+    for sx in (-1, 1):                       # body-mount pucks floor->frame
+        for mz in (-0.90, 0.90):
+            bmv, bmf = _solid_cylinder(0.05, -0.025, 0.025, seg=8)
+            meshes.append(Mesh(_xform(bmv, rot_x(math.pi / 2),
+                                      (sx * 0.75, -0.48, mz)), bmf,
+                               _mix(C_PYLON, C_HULL_DARK, 0.4),
+                               "body mount" if (sx > 0 and mz > 0) else ""))
+    # the main fuel: He-3 tank strapped in the trunk beside the cell
+    tkv, tkf = _solid_cylinder(0.10, -0.18, 0.18, seg=12)
+    meshes.append(Mesh(_xform(tkv, rot_x(math.pi / 2),
+                              (0.35, 0.16, -1.60)), tkf,
+                       _mix(C_COLLECT, C_HULL, 0.45), "He-3 tank"))
+    for ts2 in (-0.08, 0.08):
+        tsv4, tsf4 = _box(0.35, 0.24, -1.60 + ts2, 0.22, 0.02, 0.05)
+        meshes.append(Mesh(tsv4, tsf4, C_HULL_DARK,
+                           "tank strap" if ts2 < 0 else ""))
+    fsv, fsf = _box(0.35, 0.27, -1.50, 0.03, 0.02, 0.03)     # fuel sender
+    meshes.append(Mesh(fsv, fsf, _mix(C_ACCENT, C_PYLON, 0.4),
+                       "fuel sender"))
+    tlv4, tlf4 = _pipe_path([(0.35, 0.26, -1.45), (0.35, 0.40, -1.55),
+                             (0.34, 0.47, -1.57)], 0.008, seg=6,
+                            closed=False)                    # tank -> regulator
+    meshes.append(Mesh(tlv4, tlf4, _mix(C_COLLECT, C_PYLON, 0.35),
+                       "tank feed"))
+    # LV honesty: the HV bus steps down -- a DC-DC converter sits in the
+    # frunk beside the aux battery and trickles it
+    dcv2, dcf3 = _box(0.20, -0.05, 1.55, 0.18, 0.10, 0.16)
+    meshes.append(Mesh(dcv2, dcf3, _mix(C_COIL, C_HULL_DARK, 0.5),
+                       "DC-DC converter"))
+    dcv3, dcf4 = _rod((0.30, -0.05, 1.58), (0.40, -0.08, 1.60),
+                      0.010, seg=6)
+    meshes.append(Mesh(dcv3, dcf4, _mix(C_WARN, C_PYLON, 0.4), ""))
+    hlv3, hlf3 = _box(0.0, 0.86, -0.05, 1.55, 0.02, 1.30)      # headliner
+    meshes.append(Mesh(hlv3, hlf3, _mix(C_HULL_DARK, C_COLLECT, 0.5),
+                       "headliner"))
+    msv2, msf2 = _rod((0.0, 0.83, 0.38), (0.0, 0.87, 0.345),   # mirror stem
+                      0.008, seg=6)
+    meshes.append(Mesh(msv2, msf2, C_PYLON, "mirror stem"))
+    ftv2, ftf2 = _box(0.0, -0.05, 1.60, 1.30, 0.50, 0.90)      # frunk tub
+    meshes.append(Mesh(ftv2, ftf2, _mix(C_HULL_DARK, C_COLLECT, 0.2),
+                       "frunk tub"))
+    for rz in (1.25, 1.75):                    # hood inner ribs under the pad
+        hrv2, hrf2 = _rod((-0.50, 0.375, rz), (0.50, 0.375, rz),
+                          0.012, seg=6)
+        meshes.append(Mesh(hrv2, hrf2, C_PYLON,
+                           "hood rib" if rz > 1.5 else ""))
+    for sx in (-1, 1):                         # rear bumperette blocks
+        bpv2, bpf2 = _box(sx * 0.45, -0.22, -2.225, 0.18, 0.14, 0.03)
+        meshes.append(Mesh(bpv2, bpf2, _mix(C_HULL_DARK, C_PYLON, 0.4),
+                           "bumperette" if sx > 0 else ""))
+    pbv, pbf = _pipe_path([(0.10, 0.20, 0.10), (0.15, -0.30, -0.50),
+                           (0.15, -0.55, -1.30)], 0.008, seg=8, closed=False)
+    meshes.append(Mesh(pbv, pbf, C_HULL_DARK, "park brake cable"))
+    wpv2, wpf2 = _solid_cylinder(0.015, -0.02, 0.02, seg=8)    # washer pump
+    meshes.append(Mesh(_xform(wpv2, rot_x(math.pi / 2),
+                              (0.55, -0.12, 1.70)), wpf2, C_PYLON,
+                       "washer pump"))
+    for sx in (-1, 1):                         # shoulder harness to roll bar
+        hsv5, hsf5 = _rod((sx * 0.34, 0.48, -0.52),
+                          (sx * 0.34, 0.82, -0.70), 0.012, seg=6)
+        meshes.append(Mesh(hsv5, hsf5, _mix(C_BAD, C_HULL_DARK, 0.4),
+                           "harness strap" if sx > 0 else ""))
+    for sx in (-1, 1):                         # door lock barrels, outside
+        dlv4, dlf4 = _solid_cylinder(0.008, -0.008, 0.008, seg=8)
+        meshes.append(Mesh(_xform(dlv4, rot_y(math.pi / 2),
+                                  (sx * 0.95, 0.44, 0.15)), dlf4,
+                           C_PYLON, "door lock" if sx > 0 else ""))
+    for sx in (-1, 1):                         # sun-visor clips on header
+        vcv, vcf = _box(sx * 0.55, 0.855, 0.38, 0.03, 0.02, 0.05)
+        meshes.append(Mesh(vcv, vcf, C_PYLON, ""))
+    for sx in (-1, 1):                         # trunk tie-down eyes
+        tdv, tdf = _torus(0.03, 0.008, seg_major=10, seg_minor=5)
+        meshes.append(Mesh(_xform(tdv, None, (sx * 0.40, 0.05, -1.95)),
+                           tdf, C_PYLON, "tie-down" if sx > 0 else ""))
+    ikv, ikf = _rod((-0.26, 0.40, 0.345), (-0.26, 0.38, 0.36),  # key in the
+                    0.006, seg=6)                               # barrel
+    meshes.append(Mesh(ikv, ikf, _mix(C_TEXT, C_HULL, 0.3), "ignition key"))
+    # ---- detail pass IX: the glass the greenhouse was still missing ------
+    # the toll panes existed inside empty window holes -- the door glass
+    # itself was never drawn. two panes close the cabin against the wall.
+    for sx in (-1, 1):
+        pts = [(sx * 0.945, 0.46, 0.70), (sx * 0.94, 0.50, -0.56),
+               (sx * 0.85, 0.79, -0.48), (sx * 0.85, 0.83, 0.34)]
+        meshes.append(Mesh(pts, [(0, 1, 2, 3)],
+                           _mix(C_BUBBLE, C_HULL, 0.35),
+                           "door glass" if sx > 0 else "", wire=True))
+    # interior door release levers on the trim tops, next to the sill
+    for sx in (-1, 1):
+        rlv2, rlf2 = _box(sx * 0.72, 0.34, 0.30, 0.08, 0.02, 0.03)
+        meshes.append(Mesh(rlv2, rlf2, _mix(C_PYLON, C_TEXT, 0.2),
+                           "release lever" if sx > 0 else ""))
+    dtp, dtpf = _box(0.0, 0.475, 0.40, 1.55, 0.035, 0.35)      # dash top pad
+    meshes.append(Mesh(dtp, dtpf, _mix(C_HULL_DARK, C_COLLECT, 0.35),
+                       "dash pad"))
+    dsg, dsgf = _solid_cylinder(0.035, -0.006, 0.006, seg=10)  # dash speaker
+    meshes.append(Mesh(_xform(dsg, rot_x(-math.pi / 2),
+                              (0.20, 0.495, 0.40)), dsgf, C_HULL_DARK,
+                       "dash speaker"))
+    hrv3, hrf3 = _rod((-0.30, 0.10, 0.50), (-0.30, 0.07, 0.55),  # release
+                      0.010, seg=6)                               # handle in
+    meshes.append(Mesh(hrv3, hrf3, _mix(C_WARN, C_PYLON, 0.3),   # the footwell
+                       "release handle"))
+    dcv4, dcf5 = _pipe_path([(0.30, 0.10, 0.50), (0.40, 0.0, -0.50),
+                             (0.30, 0.20, -1.30), (0.10, 0.40, -1.55)],
+                            0.005, seg=6, closed=False)          # deck release
+    meshes.append(Mesh(dcv4, dcf5, C_HULL_DARK, "deck release"))
+    htv, htf = _solid_cylinder(0.018, -0.02, 0.02, seg=8)        # heater tap
+    meshes.append(Mesh(_xform(htv, rot_y(math.pi / 2),
+                              (0.20, 0.05, 0.80)), htf, C_PYLON,
+                       "heater tap"))
+    flv2, flf2 = _solid_cylinder(0.025, -0.025, 0.025, seg=8)    # flasher unit
+    meshes.append(Mesh(_xform(flv2, None, (-0.45, 0.05, 0.50)),
+                       flf2, _mix(C_PYLON, C_WARN, 0.3),
+                       "flasher unit"))
+    aav, aaf = _box(0.75, 0.32, 0.64, 0.04, 0.04, 0.05)          # antenna amp
+    meshes.append(Mesh(aav, aaf, _mix(C_ACCENT, C_HULL_DARK, 0.5),
+                       "antenna amp"))
+    for sx in (-1, 1):                            # ajar switches at strikers
+        ajv, ajf = _solid_cylinder(0.006, -0.008, 0.008, seg=6)
+        meshes.append(Mesh(_xform(ajv, rot_x(math.pi / 2),
+                                  (sx * 0.82, -0.15, -0.10)), ajf,
+                           _mix(C_WARN, C_PYLON, 0.4), ""))
+    for sx in (-1, 1):                            # battery posts on top
+        bpv3, bpf3 = _solid_cylinder(0.012, -0.015, 0.015, seg=6)
+        meshes.append(Mesh(_xform(bpv3, rot_x(-math.pi / 2),
+                                  (0.47 + sx * 0.07, -0.005, 1.60)),
+                           bpf3, _mix(C_WARN, C_PYLON, 0.4),
+                           "battery post" if sx > 0 else ""))
+    # the DMC shipped no spare tire -- a puncture kit lives in the trunk
+    ifv, iff = _solid_cylinder(0.04, -0.06, 0.06, seg=10)
+    meshes.append(Mesh(_xform(ifv, rot_x(math.pi / 2),
+                              (-0.20, 0.10, -1.95)), iff,
+                       _mix(C_WARN, C_HULL, 0.4), "inflator can"))
+    ihv, ihf = _rod((-0.20, 0.17, -1.95), (-0.14, 0.14, -1.90),
+                    0.005, seg=6)
+    meshes.append(Mesh(ihv, ihf, C_HULL_DARK, ""))
+    tsv5, tsf5 = _box(0.30, 0.47, 0.42, 0.03, 0.02, 0.03)         # temp sensor
+    meshes.append(Mesh(tsv5, tsf5, _mix(C_ACCENT, C_HULL_DARK, 0.5),
+                       "cabin sensor"))
+    hn2, hn2f = _solid_cylinder(0.05, -0.025, 0.025, seg=10)       # dual tone
+    meshes.append(Mesh(_xform(hn2, rot_x(math.pi / 2),
+                              (-0.30, -0.28, 2.12)), hn2f, C_PYLON, ""))
+    gbh, gbhf = _rod((0.18, 0.34, 0.46), (0.42, 0.34, 0.46),       # glovebox
+                     0.008, seg=6)                                 # hinge
+    meshes.append(Mesh(gbh, gbhf, C_PYLON, ""))
+    # ---- detail pass X: handles, channels, blades, filters ---------------
+    for sx in (-1, 1):                         # flush exterior door handles
+        dhv, dhf = _box(sx * 0.948, 0.44, 0.40, 0.015, 0.025, 0.10)
+        meshes.append(Mesh(dhv, dhf, _mix(C_HULL, C_PYLON, 0.3),
+                           "door handle" if sx > 0 else ""))
+    for sx in (-1, 1):                         # door check straps, front jamb
+        csv2, csf2 = _rod((sx * 0.93, -0.05, 0.75),
+                          (sx * 0.80, -0.05, 0.68), 0.010, seg=6)
+        meshes.append(Mesh(csv2, csf2, C_PYLON,
+                           "check strap" if sx > 0 else ""))
+    for sx in (-1, 1):                         # felt channels the glass runs
+        gcv, gcf = _box(sx * 0.94, 0.455, 0.10, 0.012, 0.012, 1.10)
+        meshes.append(Mesh(gcv, gcf, _mix(C_HULL_DARK, C_PYLON, 0.3),
+                           "glass channel" if sx > 0 else ""))
+    idv, idf = _box(0.0, -0.10, 2.10, 0.60, 0.15, 0.15)          # intake duct
+    meshes.append(Mesh(idv, idf, _mix(C_HULL_DARK, C_PYLON, 0.2),
+                       "intake duct"))
+    for sx in (-1, 1):                         # rubber blades on the wiper arms
+        wbv2, wbf2 = _box(sx * 0.35, 0.53, 0.87, 0.45, 0.008, 0.02)
+        meshes.append(Mesh(wbv2, wbf2, _mix(C_HULL_DARK, C_PYLON, 0.5),
+                           "wiper blade" if sx > 0 else ""))
+    pts = [(-0.60, deck_top(-1.32) + 0.004, -1.32),              # decklid
+           (0.60, deck_top(-1.32) + 0.004, -1.32),               # weatherstrip
+           (0.60, deck_top(-2.10) + 0.004, -2.10),
+           (-0.60, deck_top(-2.10) + 0.004, -2.10)]
+    meshes.append(Mesh(pts, [(0, 1, 2, 3)],
+                       _mix(C_HULL_DARK, C_PYLON, 0.35),
+                       "decklid seal", wire=True))
+    cfv, cff = _box(0.40, 0.25, 0.55, 0.12, 0.08, 0.06)          # cabin filter
+    meshes.append(Mesh(cfv, cff, _mix(C_HULL_DARK, C_COLLECT, 0.2),
+                       "cabin filter"))
+    for vx in (-0.45, 0.0, 0.45):                # face vents in the dash pad
+        fvv3, fvf3 = _box(vx, 0.50, 0.40, 0.08, 0.012, 0.04)
+        meshes.append(Mesh(fvv3, fvf3, _mix(C_HULL_DARK, C_PYLON, 0.5),
+                           "face vent" if vx == 0 else ""))
+    for sx in (-1, 1):                           # coat hooks on the sails
+        chv3, chf3 = _box(sx * 0.80, 0.55, -0.40, 0.02, 0.03, 0.04)
+        meshes.append(Mesh(chv3, chf3, C_PYLON, ""))
+    hbb, hbbf = _box(0.13, 0.10, 0.02, 0.06, 0.06, 0.14)          # handbrake
+    meshes.append(Mesh(hbb, hbbf, _mix(C_HULL_DARK, C_COLLECT, 0.4),  # boot
+                       "brake boot"))
+    lcv2, lcf2 = _solid_cylinder(0.014, -0.01, 0.01, seg=8)         # selector
+    meshes.append(Mesh(_xform(lcv2, rot_x(math.pi / 2),              # lockout
+                              (0.0, 0.22, 0.27)), lcf2, C_PYLON, ""))
+    cgv, cgf = _torus(0.03, 0.008, seg_major=12, seg_minor=5)         # column
+    meshes.append(Mesh(_xform(cgv, None, (-0.322, -0.086, 0.65)),     # grommet
+                       cgf, _mix(C_PYLON, C_HULL_DARK, 0.4), ""))
+    # ---- detail pass XI: the fittings the tenth pass still missed ---------
+    dlv5, dlf5 = _solid_cylinder(0.010, -0.012, 0.012, seg=8)          # decklid
+    meshes.append(Mesh(_xform(dlv5, rot_x(-math.pi / 2),               # key lock
+                              (0.45, deck_top(-1.70) + 0.010, -1.70)),
+                       dlf5, C_PYLON, "decklid lock"))
+    scv4, scf4 = _box(0.0, 0.36, 1.95, 0.06, 0.03, 0.03)               # hood
+    meshes.append(Mesh(scv4, scf4, C_PYLON, "safety catch"))            # catch
+    prv, prf = _rod((-0.42, 0.10, 0.50), (-0.42, 0.07, 0.55),          # charge
+                    0.010, seg=6)                                      # port
+    meshes.append(Mesh(prv, prf, _mix(C_WARN, C_PYLON, 0.3),            # release
+                       "port release"))
+    lsv, lsf = _box(-0.55, 0.44, 0.40, 0.06, 0.04, 0.03)                # lamp
+    meshes.append(Mesh(lsv, lsf, _mix(C_PYLON, C_TEXT, 0.2),            # switch
+                       "lamp switch"))
+    for sx in (-1, 1):                          # sail-panel interior trim
+        stv3, stf3 = _box(sx * 0.80, 0.40, -0.55, 0.03, 0.35, 0.35)
+        meshes.append(Mesh(stv3, stf3, _mix(C_HULL_DARK, C_COLLECT, 0.3),
+                           "sail trim" if sx > 0 else ""))
+    for sx in (-1, 1):                          # footwell heat ducts from
+        fdv2, fdf3 = _pipe_path([(0.0, 0.15, 0.50),                   # the core
+                                 (sx * 0.40, 0.0, 0.55),
+                                 (sx * 0.55, -0.15, 0.55)],
+                                0.015, seg=6, closed=False)
+        meshes.append(Mesh(fdv2, fdf3, _mix(C_HULL_DARK, C_PYLON, 0.3),
+                           "footwell duct" if sx > 0 else ""))
+    btv3, btf3 = _solid_cylinder(0.008, -0.012, 0.012, seg=8)           # lever
+    meshes.append(Mesh(_xform(btv3, rot_x(-math.pi / 2),                 # button
+                              (0.13, 0.24, 0.05)), btf3, C_PYLON, ""))
+    pav, paf = _rod((-0.44, -0.24, 0.52), (-0.44, -0.16, 0.60),         # pedal
+                    0.010, seg=6)                                       # arm
+    meshes.append(Mesh(pav, paf, C_PYLON, "pedal arm"))
     parts.append(Part(
         "body", "STAINLESS MONOCOQUE  (4.4 m coupe)", meshes,
         ["4.40 m wedge, brushed-steel skin -- the donor shell is a 1980s",
          "  gull-wing coupe because the whole point is that it still looks",
          "  like a car. It keeps the car parts too: steering wheel and",
          "  column, pedals, selector, console, headrests, belts, visors,",
-         "  handles, mirrors, wipers, sail louvers, air dam, the OUTATIME",
+         "  handles, mirrors, wipers, sail louvers, air dam, the plate",
          "  plate -- and a drawn driver, because the budget books crew mass.",
+         "  The second detail pass added the rest of the fittings: hinge",
+         "  rail and toll panes, armrests, parcel shelf, the 88 needle on",
+         "  the speedo, mirror glass, washer jets, jacking rails, tow eye,",
+         "  undertrays, the aux battery and the cabin heat exchanger.",
          "  The glazing is drawn as wire so it can never painter-hide the",
          "  cabin it frames. The tail bar rides the hot channel: it lights",
          "  with the run and brightens under regen braking -- no friction",
@@ -7311,11 +8195,234 @@ def _build_special_parts_impl():
         meshes.append(Mesh(_xform(nv, None,
                                 (sx * 0.33, -0.18, -2.08)),
                            nf, C_RCS, "RCS bell" if sx > 0 else ""))
+    # ---- detail pass II: rolling stock, steering, RCS propellant --------
+    for sx in (-1, 1):
+        for sz in (-1.32, 1.32):
+            tw = 0.15 if sz < 0 else 0.13        # the DMC's rear stagger:
+            tv4, tf4 = _annulus_cylinder(        # wider tyres on the back
+                0.34, 0.205, -tw, tw, seg=20)
+            meshes.append(Mesh(_xform(tv4, wheel,
+                                      (sx * 0.90, -0.60, sz)),
+                               tf4, _mix(C_HULL_DARK,
+                                         (0.02, 0.02, 0.03), 0.55),
+                               "tire" if (sx > 0 and sz > 0) else ""))
+            x0 = sx * 0.90 + sx * (tw - 0.015)
+            x1 = sx * 0.90 + sx * (tw + 0.010)
+            rv8, rf8 = _rod((x0, -0.60, sz), (x1, -0.60, sz),
+                            0.195, seg=16)
+            meshes.append(Mesh(rv8, rf8, _mix(C_HULL, C_PYLON, 0.25),
+                               "rim" if (sx > 0 and sz > 0) else ""))
+            cv9, cf9 = _rod((x1 - sx * 0.005, -0.60, sz),
+                            (x1 + sx * 0.012, -0.60, sz), 0.055, seg=10)
+            meshes.append(Mesh(cv9, cf9, _mix(C_PYLON, C_WARN, 0.15),
+                               "hub cap" if (sx > 0 and sz > 0) else ""))
+            for k in range(5):                    # lug ring on each face
+                a = 2 * math.pi * k / 5
+                ca, sa = 0.09 * math.cos(a), 0.09 * math.sin(a)
+                lv5, lf5 = _rod(
+                    (x1 - sx * 0.004, -0.60 + ca, sz + sa),
+                    (x1 + sx * 0.008, -0.60 + ca, sz + sa),
+                    0.012, seg=6)
+                meshes.append(Mesh(lv5, lf5, C_HULL_DARK, ""))
+            # coil-over dampers share the A-arm load path
+            dmv, dmf = _rod((sx * 0.68, -0.34, sz),
+                            (sx * 0.80, -0.62, sz), 0.026, seg=8)
+            meshes.append(Mesh(dmv, dmf, _mix(C_PYLON, C_HULL, 0.25),
+                               "damper" if (sx > 0 and sz > 0) else ""))
+    srkv, srkf = _box(0.0, -0.55, 1.30, 0.62, 0.08, 0.08)  # steering rack
+    meshes.append(Mesh(srkv, srkf, C_HULL_DARK, "steering rack"))
+    for sx in (-1, 1):                          # tie rods rack -> hubs
+        trv, trf = _rod((sx * 0.30, -0.55, 1.30),
+                        (sx * 0.84, -0.58, 1.30), 0.012, seg=6)
+        meshes.append(Mesh(trv, trf, _mix(C_HULL, C_HULL_DARK, 0.3), ""))
+    # the bells were missing their supply: two cold-gas bottles underslung
+    # aft, plumbed straight to each bell -- attitude authority needs gas
+    for sx in (-1, 1):
+        gbv, gbf = _solid_cylinder(0.085, -0.12, 0.12, seg=10)
+        meshes.append(Mesh(_xform(gbv, rot_x(math.pi / 2),
+                                  (sx * 0.45, -0.68, -1.70)), gbf,
+                           _mix(C_RCS, C_HULL, 0.4),
+                           "RCS bottle" if sx > 0 else ""))
+        gfv, gff = _rod((sx * 0.45, -0.66, -1.82),
+                        (sx * 0.35, -0.24, -2.02), 0.010, seg=6)
+        meshes.append(Mesh(gfv, gff, _mix(C_RCS, C_PYLON, 0.4), ""))
+    # ---- detail pass III: valve stems, encoders, liners, bonding ---------
+    for sx in (-1, 1):
+        for sz in (-1.32, 1.32):
+            tw = 0.15 if sz < 0 else 0.13
+            xf = sx * 0.90 + sx * (tw + 0.010)
+            vvv, vvf = _rod(                    # valve stem on the rim
+                (xf - sx * 0.004, -0.60 + 0.145, sz + 0.05),
+                (xf + sx * 0.014, -0.60 + 0.145, sz + 0.05),
+                0.007, seg=6)
+            meshes.append(Mesh(vvv, vvf, C_HULL_DARK,
+                               "valve" if (sx > 0 and sz > 0) else ""))
+            epv, epf = _box(sx * 0.84, -0.48, sz + 0.18,
+                            0.04, 0.04, 0.04)   # hub encoder pickup --
+            meshes.append(Mesh(epv, epf, _mix(C_ACCENT, C_HULL_DARK, 0.5),
+                               "encoder" if (sx > 0 and sz > 0) else ""))
+            lnv, lnf = _torus(0.36, 0.018, seg_major=14, seg_minor=5,
+                              a0=0.15, a1=math.pi - 0.15, closed=False)
+            meshes.append(Mesh(_xform(lnv, rot_y(math.pi / 2),
+                                      (sx * 0.78, -0.58, sz)),
+                               lnf, C_HULL_DARK, ""))   # well liner lip
+            bsv, bsf = _rod((sx * 0.86, -0.55, sz - 0.10),  # ground strap:
+                            (sx * 0.74, -0.42, sz - 0.10),  # hub to body
+                            0.008, seg=6)
+            meshes.append(Mesh(bsv, bsf, _mix(C_PYLON, C_COLLECT, 0.3), ""))
+    # ---- detail pass V: the motors were never wired ----------------------
+    for sx in (-1, 1):                     # HV loom trays under the floor
+        ltv2, ltf2 = _box(sx * 0.32, -0.57, 0.05, 0.05, 0.03, 2.05)
+        meshes.append(Mesh(ltv2, ltf2, _mix(C_COIL, C_HULL_DARK, 0.5),
+                           "loom tray" if sx > 0 else ""))
+    for sx in (-1, 1):                     # phase cables tray -> hub
+        for sz in (-1.32, 1.32):
+            zd = 1.0 if sz > 0 else -1.0
+            hcv, hcf = _pipe_path(
+                [(sx * 0.32, -0.55, 1.05 * zd), (sx * 0.60, -0.57, 1.25 * zd),
+                 (sx * 0.85, -0.56, sz)], 0.016, seg=8, closed=False)
+            meshes.append(Mesh(hcv, hcf, _mix(C_COIL, C_WARN, 0.2),
+                               "HV cable" if (sx > 0 and sz > 0) else ""))
+            hcv2, hcf2 = _box(sx * 0.86, -0.50, sz - 0.15 * zd,
+                              0.05, 0.04, 0.06)
+            meshes.append(Mesh(hcv2, hcf2, _mix(C_COIL, C_PYLON, 0.4),
+                               "hub connector" if (sx > 0 and sz > 0)
+                               else ""))
+    for sx in (-1, 1):                     # clip weights on the rim lips
+        for sz in (-1.32, 1.32):
+            tw = 0.15 if sz < 0 else 0.13
+            xf = sx * 0.90 + sx * (tw + 0.010)
+            bwv, bwf = _box(xf, -0.60 + 0.17, sz - 0.04, 0.03, 0.02, 0.02)
+            meshes.append(Mesh(bwv, bwf, _mix(C_PYLON, C_WARN, 0.2),
+                               "balance weight"
+                               if (sx > 0 and sz > 0) else ""))
+    # anti-roll bars, front and rear, on drop links to the lower A-arms
+    for zd in (1.0, -1.0):
+        abv, abf = _rod((-0.70, -0.53, 1.05 * zd),
+                        (0.70, -0.53, 1.05 * zd), 0.018, seg=8)
+        meshes.append(Mesh(abv, abf, C_PYLON,
+                           "anti-roll bar" if zd > 0 else ""))
+        for sx in (-1, 1):
+            dlv, dlf = _rod((sx * 0.70, -0.53, 1.05 * zd),
+                            (sx * 0.80, -0.64, 1.20 * zd), 0.012, seg=6)
+            meshes.append(Mesh(dlv, dlf, C_PYLON, ""))
+            brv, brf = _box(sx * 0.55, -0.49, 1.05 * zd, 0.07, 0.05, 0.08)
+            meshes.append(Mesh(brv, brf, _mix(C_PYLON, C_HULL_DARK, 0.4), ""))
+    # ---- detail pass VI: toe links, ride sensors, hub ducts, RCS fittings --
+    for sx in (-1, 1):                        # rear toe links
+        tlv3, tlf3 = _rod((sx * 0.45, -0.52, -1.10),
+                          (sx * 0.84, -0.58, -1.30), 0.012, seg=6)
+        meshes.append(Mesh(tlv3, tlf3, C_PYLON,
+                           "toe link" if sx > 0 else ""))
+    for sx in (-1, 1):
+        for sz in (-1.32, 1.32):
+            zd = 1.0 if sz > 0 else -1.0
+            rhv, rhf = _box(sx * 0.62, -0.38, sz - 0.30 * zd,
+                            0.04, 0.03, 0.05)
+            meshes.append(Mesh(rhv, rhf, _mix(C_ACCENT, C_PYLON, 0.4),
+                               "ride sensor"
+                               if (sx > 0 and sz > 0) else ""))
+            hdv, hdf = _box(sx * 0.72, -0.42, sz - 0.28 * zd,
+                            0.06, 0.08, 0.18)          # cooling duct to
+            meshes.append(Mesh(hdv, hdf,               # each hub motor
+                               _mix(C_HULL_DARK, C_PYLON, 0.3),
+                               "hub duct" if (sx > 0 and sz > 0) else ""))
+    for sx in (-1, 1):                         # RCS bottle service fittings
+        fpv, fpf = _solid_cylinder(0.02, -0.015, 0.015, seg=8)
+        meshes.append(Mesh(_xform(fpv, None,
+                                  (sx * 0.45, -0.68, -1.56)), fpf,
+                           C_PYLON, "fill port" if sx > 0 else ""))
+        pgv, pgf = _solid_cylinder(0.025, -0.012, 0.012, seg=8)
+        meshes.append(Mesh(_xform(pgv, rot_x(-math.pi / 2),
+                                  (sx * 0.45, -0.575, -1.70)), pgf,
+                           _mix(C_TEXT, C_WARN, 0.3),
+                           "pressure gauge" if sx > 0 else ""))
+    # ---- detail pass VII: tread bands on the tire shoulders ---------------
+    for sx in (-1, 1):
+        for sz in (-1.32, 1.32):
+            tw = 0.15 if sz < 0 else 0.13
+            tbv, tbf = _annulus_cylinder(0.342, 0.338, -tw, tw, seg=20)
+            meshes.append(Mesh(_xform(tbv, rot_y(math.pi / 2),
+                                      (sx * 0.90, -0.60, sz)), tbf,
+                               _mix(C_HULL_DARK, C_PYLON, 0.5),
+                               "tread band" if (sx > 0 and sz > 0) else ""))
+    # ---- detail pass VIII: motor controllers + fin rings ------------------
+    # the hub motors are dumb iron; the controllers sit inboard on the
+    # loom trays and take the phase cables the last few centimetres
+    for sx in (-1, 1):
+        for sz in (-1.32, 1.32):
+            mcv, mcf = _box(sx * 0.60, -0.52, sz - 0.20 * (1 if sz > 0
+                            else -1), 0.14, 0.08, 0.10)
+            meshes.append(Mesh(mcv, mcf, _mix(C_COIL, C_HULL_DARK, 0.55),
+                               "motor controller"
+                               if (sx > 0 and sz > 0) else ""))
+            tw = 0.15 if sz < 0 else 0.13
+            mfv2, mff2 = _annulus_cylinder(0.16, 0.15, -0.005, 0.005,
+                                           seg=16)
+            meshes.append(Mesh(_xform(mfv2, rot_y(math.pi / 2),
+                                      (sx * 0.90 + sx * (tw + 0.015),
+                                       -0.60, sz)), mff2,
+                               _mix(C_PYLON, C_HULL_DARK, 0.3), ""))
+    # ---- detail pass IX: suspension bump stops + front crossmember --------
+    # the A-arms never had bump stops; rubber cones over the lower arms
+    for sx in (-1, 1):
+        for sz in (-1.32, 1.32):
+            bsv3, bsf3 = _solid_cylinder(0.035, -0.05, 0.0, seg=8)
+            meshes.append(Mesh(_xform(bsv3, rot_x(math.pi / 2),
+                                      (sx * 0.55, -0.42, sz)), bsf3,
+                               _mix(C_PYLON, C_HULL_DARK, 0.5),
+                               "bump stop" if (sx > 0 and sz > 0) else ""))
+    fcx, fcxf = _rod((-0.60, -0.55, 1.10), (0.60, -0.55, 1.10),
+                     0.022, seg=8)                              # front member
+    meshes.append(Mesh(fcx, fcxf, C_PYLON, "crossmember"))
+    for sx in (-1, 1):                           # solenoid valves on bells
+        svv, svf = _solid_cylinder(0.018, -0.02, 0.02, seg=8)
+        meshes.append(Mesh(_xform(svv, rot_y(math.pi / 2),
+                                  (sx * 0.50, -0.30, -2.02)), svf,
+                           _mix(C_RCS, C_PYLON, 0.4),
+                           "RCS solenoid" if sx > 0 else ""))
+    for sx in (-1, 1):                           # bottle mount straps
+        bmv2, bmf2 = _box(sx * 0.45, -0.68, -1.70, 0.10, 0.02, 0.28)
+        meshes.append(Mesh(bmv2, bmf2, _mix(C_HULL_DARK, C_PYLON, 0.4),
+                           "bottle strap" if sx > 0 else ""))
+    # ---- detail pass X: joints, bushings, boots, sensor leads -------------
+    for sx in (-1, 1):                           # ball joints at the hubs
+        for sz in (-1.32, 1.32):
+            bjv, bjf = _sphere(0.03, seg=8, rings=6)
+            meshes.append(Mesh(_xform(bjv, None,
+                                      (sx * 0.80, -0.55, sz + 0.08)),
+                               bjf, C_PYLON,
+                               "ball joint" if (sx > 0 and sz > 0) else ""))
+    for sx in (-1, 1):                           # bushings, inboard pivots
+        for sz in (-1.32, 1.32):
+            bsv4, bsf4 = _annulus_cylinder(0.04, 0.028, -0.01, 0.01, seg=8)
+            meshes.append(Mesh(_xform(bsv4, rot_y(math.pi / 2),
+                                      (sx * 0.55, -0.55, sz)), bsf4,
+                               _mix(C_PYLON, C_HULL_DARK, 0.4), ""))
+    for sx in (-1, 1):                           # bellows over rack ends
+        rkv, rkf = _solid_cylinder(0.03, -0.04, 0.04, seg=8)
+        meshes.append(Mesh(_xform(rkv, rot_y(math.pi / 2),
+                                  (sx * 0.58, -0.55, 1.30)), rkf,
+                           _mix(C_PYLON, C_HULL_DARK, 0.4),
+                           "rack boot" if sx > 0 else ""))
+    for sx in (-1, 1):                           # encoder leads to body
+        for sz in (-1.32, 1.32):
+            slv, slf = _rod((sx * 0.86, -0.46,
+                             sz + 0.15 * (1 if sz > 0 else -1)),
+                            (sx * 0.72, -0.35,
+                             sz + 0.10 * (1 if sz > 0 else -1)),
+                            0.005, seg=6)
+            meshes.append(Mesh(slv, slf, _mix(C_ACCENT, C_HULL_DARK, 0.5),
+                               "sensor lead" if (sx > 0 and sz > 0) else ""))
     parts.append(Part(
         "wheels", "HUB DRIVES + RCS BELLS (x4)", meshes,
         ["NO GAS ENGINE. Each wheel is a fusion-fed hub motor; the pair of",
          "  bells at the tail are the car-scale RCS -- cold-gas/ion puffs for",
-         "  the few seconds a bubble transition needs attitude authority.",
+         "  the few seconds a bubble transition needs attitude authority,",
+         "  fed by the two bottles underslung aft.",
+         "The rolling stock is drawn honestly now: staggered tyres over",
+         "  five-lug rims, dampers on the A-arms, and a steering rack with",
+         "  tie rods -- parked, but connected.",
          "Kerbside mass (body + all drive hardware + driver): %s."
          % fmt_mass(CAR_MASS_KG)],
         nextord(), (0.0, -1.2, 0.0), C_RCS))
@@ -7348,8 +8455,7 @@ def _build_special_parts_impl():
         sv0, sf0 = _rod(p1, p2, 0.022, seg=8)
         meshes.append(Mesh(sv0, sf0, C_PYLON,
                            "standoff" if p1[0] > 0 else ""))
-    # field driver boxes where the run terminates on the rear deck -- the
-    # film's capacitor boxes are here, and here they are real: each one
+    # field driver boxes where the run terminates on the rear deck -- each
     # houses the HTS current-lead pack that feeds its half of the loop
     for sx in (-1, 1):
         bv, bf = _box(sx * 0.45, deck_top(-1.72) + 0.07, -1.72,
@@ -7359,17 +8465,92 @@ def _build_special_parts_impl():
         lv2, lf2 = _rod((sx * 0.45, deck_top(-1.83) + 0.05, -1.83),
                         (sx * 0.60, 0.53, -1.95), 0.03, seg=8)
         meshes.append(Mesh(lv2, lf2, C_COIL, "", glow=True))
+    # ---- detail pass II: couplers, main feeds, the field computer -------
+    for pi, pj in enumerate(path):          # coupling nodes at every bend
+        jnv, jnf = _sphere(0.055, seg=10, rings=7)
+        meshes.append(Mesh(_xform(jnv, None, pj), jnf,
+                           _mix(C_COIL, C_PYLON, 0.3),
+                           "junction" if pi == 0 else "", glow=True))
+    # ---- detail pass IV: standoff pads + junction thermal pickups -------
+    for p1, p2 in (
+            ((0.86, 0.10, 1.75), (0.98, 0.10, 1.85)),
+            ((0.88, 0.20, -1.05), (1.00, 0.24, -1.10)),
+            ((0.84, 0.46, -1.70), (0.98, 0.62, -1.75)),
+            ((-0.86, 0.10, 1.75), (-0.98, 0.10, 1.85)),
+            ((-0.88, 0.20, -1.05), (-1.00, 0.24, -1.10)),
+            ((-0.84, 0.46, -1.70), (-0.98, 0.62, -1.75))):
+        padv, padf = _box(p1[0], p1[1] - 0.015, p1[2], 0.05, 0.02, 0.05)
+        meshes.append(Mesh(padv, padf, _mix(C_PYLON, C_HULL_DARK, 0.4),
+                           "standoff pad" if p1[0] > 0 and p1[2] > 0 else ""))
+    for tj in ((0.98, 0.15, -1.75), (-0.98, 0.15, -1.75)):
+        tsv, tsf = _box(tj[0], tj[1] + 0.05, tj[2], 0.04, 0.03, 0.04)
+        meshes.append(Mesh(tsv, tsf, _mix(C_COIL, C_WARN, 0.35),
+                           "thermal pickup" if tj[0] > 0 else ""))
+    # ---- detail pass V: FMU telltales + driver heatsinks -----------------
+    for lx in (-0.06, 0.06):                 # status LEDs on the FMU face
+        lev, lef = _box(lx, 0.08, -0.71, 0.02, 0.02, 0.01)
+        meshes.append(Mesh(lev, lef, _mix(C_ACCENT, C_WARN, 0.5),
+                           "FMU telltale" if lx > 0 else ""))
+    for sx in (-1, 1):                       # fin stacks on the drivers
+        for fo in (-0.06, 0.0, 0.06):
+            hsv3, hsf3 = _box(sx * 0.45, deck_top(-1.72) + 0.16,
+                              -1.72 + fo, 0.24, 0.04, 0.015)
+            meshes.append(Mesh(hsv3, hsf3,
+                               _mix(C_PYLON, C_RADIATOR, 0.3),
+                               "driver heatsink" if (sx > 0 and fo == 0)
+                               else ""))
+    # ---- detail pass VII: current sensors ring the main feeds -------------
+    for sx in (-1, 1):
+        ctv3, ctf3 = _torus(0.032, 0.008, seg_major=12, seg_minor=5)
+        meshes.append(Mesh(_xform(ctv3, rot_y(0.5),
+                                  (sx * 0.42, -0.05, 0.30)), ctf3,
+                           _mix(C_COIL, C_ACCENT, 0.35),
+                           "current sensor" if sx > 0 else ""))
+    for sx in (-1, 1):                      # HV feeds: SMES puck -> run
+        fvv, fvf = _pipe_path([(sx * 0.30, 0.20, 1.32),
+                               (sx * 0.62, 0.14, 1.55),
+                               (sx * 0.98, 0.10, 1.85)], 0.018, seg=8,
+                              closed=False)
+        meshes.append(Mesh(fvv, fvf, _mix(C_COIL, C_HULL_DARK, 0.3),
+                           "main feed" if sx > 0 else "", glow=True))
+    # the field management unit: behind the bulkhead, on the harness --
+    # somebody has to sequence twelve segments of superconductor
+    fmv, fmf = _box(0.0, 0.05, -0.80, 0.40, 0.14, 0.18)
+    meshes.append(Mesh(fmv, fmf, _mix(C_COIL, C_HULL_DARK, 0.5),
+                       "field controller"))
+    for sx in (-1, 1):                       # its harness into the run
+        fhv, fhf = _pipe_path([(sx * 0.20, 0.10, -0.80),
+                               (sx * 0.70, 0.16, -0.95),
+                               (sx * 0.96, 0.24, -1.10)], 0.010, seg=8,
+                              closed=False)
+        meshes.append(Mesh(fhv, fhf, _mix(C_COIL, C_HULL_DARK, 0.5), ""))
+    # pass X: insulation jacket rings where the run crosses the open flank
+    for jr in ((0.98, 0.62, -1.0), (-0.98, 0.62, -1.0)):
+        jrv, jrf = _torus(0.06, 0.008, seg_major=12, seg_minor=5)
+        meshes.append(Mesh(_xform(jrv, None, jr), jrf,
+                           _mix(C_PYLON, C_COIL, 0.4),
+                           "jacket ring" if jr[0] > 0 else ""))
+    # pass XI: clamp rings either side of the aft junctions
+    for sx in (-1, 1):
+        jcv, jcf = _torus(0.065, 0.008, seg_major=12, seg_minor=5)
+        meshes.append(Mesh(_xform(jcv, None,
+                                  (sx * 1.00, 0.24, -1.10)), jcf,
+                           _mix(C_PYLON, C_COIL, 0.4),
+                           "junction clamp" if sx > 0 else ""))
     parts.append(Part(
         "conduits", "FIELD CONDUIT RUN (the real coils)", meshes,
-        ["The glowing tubes everybody recognises as 'the flux bands' are the",
+        ["The glowing tubes along the bodywork are the field conduit run:",
          "  ACTUAL field coils: one continuous run re-threaded around the",
          "  beltline because a car is not shaped like a torus.",
          "They energise with drive power exactly like the ship's 96 sectors --",
          "  watch them light when the transition fires.",
          "The six standoffs are the pylon analog: the run is bolted to the",
          "  monocoque's hardpoints, and the struts carry the field loads.",
+         "The coupling nodes at every bend join the segments; the two",
+         "  HV feeds off the SMES bus box are what light it.",
          "The two boxes where the run terminates on the rear deck are the",
          "  field drivers -- the HTS current-lead packs, one per half-loop.",
+         "  The field management unit behind the bulkhead sequences them",
          "Their honest job: shape the bubble wall around a 4.4 m body. The",
          "  shape is different; the physics is the ship's."],
         nextord(), (0.0, 0.9, 0.0), C_COIL))
@@ -7383,15 +8564,114 @@ def _build_special_parts_impl():
     meshes.append(Mesh(_xform(lv, rot_x(math.pi / 2),
                               (0.0, deck_top(-1.45) + 0.03, -1.45)),
                        lf, _mix(C_REACTOR, C_HULL, 0.5), "service cap"))
-    # He-3 filler neck on the decklid -- the car's refuelling port; in the
-    # film this corner carried the white home-energy-reactor canister
+    # He-3 filler neck on the decklid -- the car's refuelling port, feeding
+    # the trunk tank down to the reactor's regulator
     fv, ff = _solid_cylinder(0.075, -0.01, 0.05, seg=10)
     meshes.append(Mesh(_xform(fv, rot_x(math.pi / 2),
                               (0.42, deck_top(-1.62) + 0.02, -1.62)), ff,
                        _mix(C_COLLECT, C_HULL, 0.5), "He-3 filler"))
+    # ---- detail pass II: the filler was unplumbed -- feed line, cradle,
+    # and the hot-side stubs that carry cell heat to the louver bank ----
+    h3v, h3f = _pipe_path([(0.42, deck_top(-1.62) + 0.04, -1.62),
+                           (0.30, 0.50, -1.58), (0.14, 0.42, -1.52)],
+                          0.012, seg=8, closed=False)
+    meshes.append(Mesh(h3v, h3f, _mix(C_COLLECT, C_HULL, 0.4),
+                       "He-3 feed"))
+    for sx in (-1, 1):                      # cradle mounts deck -> torus
+        crv, crf = _rod((sx * 0.14, deck_top(-1.52), -1.52),
+                        (sx * 0.14, 0.49, -1.52), 0.018, seg=8)
+        meshes.append(Mesh(crv, crf, C_PYLON, ""))
+    # ---- detail pass III: coils, shield, regulator, the DC bus ---------
+    for k in range(4):                        # poloidal field coils on
+        a = math.pi / 2 * k                   # the microtorus tube
+        cov, cof = _torus(0.105, 0.013, seg_major=12, seg_minor=6)
+        meshes.append(Mesh(
+            _xform(cov, rot_y(-a),
+                   (0.20 * math.cos(a), 0.40, -1.52 + 0.20 * math.sin(a))),
+            cof, _mix(C_COIL, C_REACTOR, 0.3),
+            "torus coil" if k == 0 else "", glow=True))
+    shv2, shf2 = _solid_cylinder(0.28, -0.012, 0.012, seg=18)
+    meshes.append(Mesh(_xform(shv2, rot_x(math.pi / 2),
+                              (0.0, 0.30, -1.52)), shf2,
+                       _mix(C_PYLON, C_HULL_DARK, 0.4),
+                       "shadow shield"))       # under the torus
+    rgv, rgf = _box(0.28, 0.52, -1.58, 0.06, 0.08, 0.06)  # He-3 regulator
+    meshes.append(Mesh(rgv, rgf, _mix(C_COLLECT, C_PYLON, 0.3),
+                       "He-3 regulator"))
+    dbv, dbf = _pipe_path([(0.10, 0.34, -1.44), (0.30, -0.30, -0.60),
+                           (0.30, -0.45, 0.60), (0.10, 0.10, 1.30)],
+                          0.015, seg=8, closed=False)
+    meshes.append(Mesh(dbv, dbf, _mix(C_COIL, C_HULL_DARK, 0.2),
+                       "DC bus out", glow=True))      # cell charges the puck
+    # ---- detail pass IV: spare fuel, quick-disconnect, instrumentation --
+    sbv, sbf = _solid_cylinder(0.09, -0.18, 0.18, seg=12)
+    meshes.append(Mesh(_xform(sbv, rot_x(math.pi / 2),
+                              (-0.45, 0.18, -1.80)), sbf,
+                       _mix(C_COLLECT, C_HULL, 0.4),
+                       "spare He-3 bottle"))
+    sbw, sbtw = _box(-0.45, 0.20, -1.80, 0.22, 0.02, 0.12)
+    meshes.append(Mesh(sbw, sbtw, C_HULL_DARK, ""))          # hold-down strap
+    qdv, qdf = _solid_cylinder(0.022, -0.03, 0.03, seg=8)    # feed-line QD
+    meshes.append(Mesh(_xform(qdv, rot_x(math.pi / 2),
+                              (0.33, 0.47, -1.57)), qdf, C_PYLON,
+                       "He-3 quick disconnect"))
+    # pass IX: service valve where the tank feed meets the line
+    tsv6, tsf6 = _solid_cylinder(0.018, -0.02, 0.02, seg=8)
+    meshes.append(Mesh(_xform(tsv6, rot_x(math.pi / 2),
+                              (0.34, 0.44, -1.56)), tsf6, C_PYLON,
+                       "service valve"))
+    iwv, iwf = _rod((0.0, 0.40, -1.30), (0.0, 0.40, -1.44),  # instrument wand
+                    0.015, seg=8)
+    meshes.append(Mesh(iwv, iwf, _mix(C_ACCENT, C_PYLON, 0.4),
+                       "torus instrument"))
+    # ---- detail pass V: coolant port stubs + the cabin telltale ----------
+    for sx in (-1, 1):                        # where the louver feeds land
+        cpv2, cpf2 = _rod((sx * 0.12, 0.44, -1.56),
+                          (sx * 0.15, 0.47, -1.58), 0.020, seg=8)
+        meshes.append(Mesh(cpv2, cpf2, _mix(C_RADIATOR, C_PYLON, 0.35),
+                           "coolant port" if sx > 0 else ""))
+    ctv2, ctf2 = _box(0.30, 0.55, -0.592, 0.03, 0.02, 0.012)  # cell-OK lamp
+    meshes.append(Mesh(ctv2, ctf2, _mix(C_ACCENT, C_COLLECT, 0.5),
+                       "cell telltale", hot=True))
+    # ---- detail pass VI: coil terminals + feed-line insulation collars ----
+    for sx in (-1, 1):                          # terminal boxes at the coil
+        ctv3, ctf3 = _box(sx * 0.15, 0.33, -1.52, 0.06, 0.05, 0.04)
+        meshes.append(Mesh(ctv3, ctf3, _mix(C_COIL, C_PYLON, 0.4),
+                           "coil terminal" if sx > 0 else ""))
+    for cx3, cy3, cz3 in ((0.36, 0.55, -1.60), (0.24, 0.47, -1.55)):
+        icv, icf = _solid_cylinder(0.030, -0.015, 0.015, seg=8)
+        meshes.append(Mesh(_xform(icv, rot_y(0.6), (cx3, cy3, cz3)), icf,
+                           _mix(C_PYLON, C_HULL, 0.3), ""))
+    for sx in (-1, 1):                      # coolant stubs -> louvers
+        csv, csf = _pipe_path([(sx * 0.12, 0.44, -1.56),
+                               (sx * 0.30, 0.54, -1.62),
+                               (sx * 0.44, 0.575, -1.72)],
+                              0.011, seg=8, closed=False)
+        meshes.append(Mesh(csv, csf,
+                           _mix(C_RADIATOR, C_HULL_DARK, 0.4),
+                           "louver feed" if sx > 0 else "", hot=True))
+    # ---- detail pass VII: the torus jacket band -----------------------------
+    jbv, jbf = _torus(0.20, 0.095, seg_major=20, seg_minor=8,
+                      a0=0.4, a1=1.2, closed=False)
+    meshes.append(Mesh(_xform(jbv, rot_x(math.pi / 2),
+                              (0.0, 0.34, -1.45)), jbf,
+                       _mix(C_REACTOR, C_HULL, 0.35), "jacket band"))
+    # ---- detail pass X: the plate the cradles actually bolt to ------------
+    cbpv, cbpf = _box(0.0, 0.28, -1.45, 0.55, 0.03, 0.55)
+    meshes.append(Mesh(cbpv, cbpf, _mix(C_PYLON, C_REACTOR, 0.3),
+                       "cell base"))
+    # ---- detail pass XI: fuel filter + cradle pads --------------------------
+    fflv, fflf = _solid_cylinder(0.025, -0.04, 0.04, seg=8)    # filters the
+    meshes.append(Mesh(_xform(fflv, rot_y(0.5),                 # He-3 stream
+                              (0.28, 0.52, -1.58)), fflf,
+                       _mix(C_COLLECT, C_PYLON, 0.4), "fuel filter"))
+    for sx in (-1, 1):                              # cradle meets the tube
+        cpv3, cpf3 = _box(sx * 0.18, 0.415, -1.45, 0.10, 0.015, 0.10)
+        meshes.append(Mesh(cpv3, cpf3, _mix(C_PYLON, C_HULL_DARK, 0.4),
+                           "cradle pad" if sx > 0 else ""))
     parts.append(Part(
         "reactor", "MICRO FUSION CELL  (trunk)", meshes,
-        ["The rear-mounted unit everyone assumes is a joke prop is a real",
+        ["The rear-mounted fusion cell is the working powerplant: a",
          "  compact D-3He torus -- the ship's reactor at 1/53 linear scale.",
          "It feeds the conduit run and the hub motors. The louver bank above",
          "  it is not trim -- it is the radiator rejecting its waste heat.",
@@ -7414,6 +8694,60 @@ def _build_special_parts_impl():
     meshes.append(Mesh(_xform(cv, rot_y(-math.pi / 2),
                             (-0.945, 0.12, -1.45)),
                        cf, _mix(C_SMES, C_HULL, 0.4), "charge port"))
+    # ---- detail pass II: output bus on the puck ---------------------------
+    bbv, bbf = _box(0.0, 0.30, 1.35, 0.30, 0.10, 0.30)
+    meshes.append(Mesh(bbv, bbf, _mix(C_SMES, C_PYLON, 0.3), "bus box"))
+    for sx in (-1, 1):                       # output posts on the bus
+        psv, psf = _solid_cylinder(0.02, 0.0, 0.04, seg=8)
+        meshes.append(Mesh(_xform(psv, rot_x(-math.pi / 2),
+                                  (sx * 0.09, 0.34, 1.35)), psf,
+                           C_PYLON, ""))
+    # ---- detail pass III: cryostat ring + quench vent -------------------
+    crv2, crf2 = _annulus_cylinder(0.24, 0.20, -0.04, 0.04, seg=16)
+    meshes.append(Mesh(_xform(crv2, rot_x(math.pi / 2),
+                              (0.0, 0.22, 1.35)), crf2,
+                       _mix(C_SMES, C_PYLON, 0.45),
+                       "cryostat ring"))
+    qvv, qvf = _pipe_path([(0.10, 0.26, 1.38), (0.25, 0.40, 1.50),
+                           (0.30, 0.435, 1.62)], 0.012, seg=8,
+                          closed=False)
+    meshes.append(Mesh(qvv, qvf, _mix(C_RCS, C_HULL, 0.4),
+                       "quench vent"))        # overboard, through the hood
+    qgv, qgf = _box(0.30, 0.445, 1.62, 0.14, 0.012, 0.10)
+    meshes.append(Mesh(qgv, qgf, C_HULL_DARK, ""))
+    # ---- detail pass IV: the HV contactor box switches the bus ----------
+    cbv, cbf = _box(0.0, 0.30, 1.18, 0.20, 0.10, 0.12)
+    meshes.append(Mesh(cbv, cbf, _mix(C_SMES, C_HULL_DARK, 0.4),
+                       "contactor box"))
+    # ---- detail pass V: bus cover + quench sense wire --------------------
+    bcv, bcf = _box(0.0, 0.385, 1.35, 0.26, 0.015, 0.26)
+    meshes.append(Mesh(bcv, bcf, _mix(C_SMES, C_HULL_DARK, 0.4),
+                       "bus cover"))
+    qsv, qsf = _pipe_path([(0.12, 0.26, 1.35), (0.18, 0.33, 1.35),
+                           (0.24, 0.36, 1.40)], 0.005, seg=6, closed=False)
+    meshes.append(Mesh(qsv, qsf, _mix(C_ACCENT, C_HULL_DARK, 0.4),
+                       "quench sensor"))
+    # ---- detail pass VI: shore power actually reaches the puck -----------
+    chv, chf = _pipe_path([(-0.92, 0.12, -1.45), (-0.50, -0.40, -0.60),
+                           (-0.40, -0.50, 0.80), (-0.15, 0.05, 1.30)],
+                          0.012, seg=8, closed=False)
+    meshes.append(Mesh(chv, chf, _mix(C_SMES, C_HULL_DARK, 0.4),
+                       "charge line"))
+    for sx in (-1, 1):                         # bus links posts -> feeds
+        blv2, blf2 = _rod((sx * 0.09, 0.37, 1.35),
+                          (sx * 0.28, 0.22, 1.33), 0.012, seg=6)
+        meshes.append(Mesh(blv2, blf2, _mix(C_SMES, C_PYLON, 0.35),
+                           "bus link" if sx > 0 else ""))
+    # ---- detail pass IX: insulating boots over the bus posts --------------
+    for sx in (-1, 1):
+        btv2, btf2 = _annulus_cylinder(0.030, 0.022, -0.02, 0.02, seg=8)
+        meshes.append(Mesh(_xform(btv2, rot_x(-math.pi / 2),
+                                  (sx * 0.09, 0.36, 1.35)), btf2,
+                           _mix(C_SMES, C_HULL_DARK, 0.55),
+                           "post boot" if sx > 0 else ""))
+    # ---- detail pass X: splice box where the cold line meets the puck -----
+    sbv3, sbf3 = _box(0.15, 0.30, 1.45, 0.10, 0.06, 0.08)
+    meshes.append(Mesh(sbv3, sbf3, _mix(C_SMES, C_PYLON, 0.4), "splice box"))
     parts.append(Part(
         "smes", "SMES BUFFER STACK  (hood)", meshes,
         ["A superconducting puck under the hood rides the seconds-scale load",
@@ -7427,10 +8761,74 @@ def _build_special_parts_impl():
 
     # ------------------------------------------- 6. PENNING BOTTLES
     meshes = []
-    for sx in (-0.35, 0.35):
+    for sx in (-1, 1):
         sv, sf = _sphere(0.115, seg=14, rings=9)
-        meshes.append(Mesh(_xform(sv, None, (sx, -0.58, -0.30)),
+        meshes.append(Mesh(_xform(sv, None, (sx * 0.35, -0.58, -0.30)),
                            sf, C_ANTIMAT, "trap" if sx > 0 else ""))
+    # ---- detail pass II: bottles were unmounted and unplumbed -----------
+    for sx in (-1, 1):                       # cradle collars on the traps
+        mgv2, mgf2 = _torus(0.125, 0.012, seg_major=14, seg_minor=6)
+        meshes.append(Mesh(_xform(mgv2, None, (sx * 0.35, -0.58, -0.30)),
+                           mgf2, C_PYLON, "trap collar" if sx > 0 else ""))
+    for sx in (-1, 1):                    # feed capillaries -> the run;
+        tcv, tcf = _pipe_path(            # antihydrogen goes where the
+            [(sx * 0.35, -0.55, -0.30),   # field is made, not to wheels
+             (sx * 0.63, -0.30, -0.55),
+             (sx * 0.90, 0.05, -0.85),
+             (sx * 0.95, 0.22, -1.08)], 0.008, seg=6, closed=False)
+        meshes.append(Mesh(tcv, tcf, _mix(C_ANTIMAT, C_COIL, 0.4),
+                           "trap feed" if sx > 0 else ""))
+    # ---- detail pass IV: the traps need volts -- PSU, leads, valves -----
+    psv, psf = _box(0.0, -0.62, -0.30, 0.20, 0.08, 0.15)
+    meshes.append(Mesh(psv, psf, _mix(C_ANTIMAT, C_HULL_DARK, 0.5),
+                       "trap PSU"))
+    for sx in (-1, 1):                       # HV leads PSU -> bottle
+        hvv2, hvf2 = _rod((sx * 0.12, -0.60, -0.30),
+                          (sx * 0.28, -0.58, -0.30), 0.008, seg=6)
+        meshes.append(Mesh(hvv2, hvf2, _mix(C_ANTIMAT, C_PYLON, 0.4), ""))
+    for sx in (-1, 1):                       # metering valves on the feeds
+        mvv, mvf = _solid_cylinder(0.018, -0.03, 0.03, seg=8)
+        meshes.append(Mesh(_xform(mvv, rot_y(math.pi / 2),
+                                  (sx * 0.63, -0.30, -0.55)), mvf,
+                           C_PYLON, "metering valve" if sx > 0 else ""))
+    # ---- detail pass V: Penning bottles need UHV -- ion pump + manifold --
+    ipv, ipf = _solid_cylinder(0.05, -0.07, 0.07, seg=10)
+    meshes.append(Mesh(_xform(ipv, rot_x(math.pi / 2),
+                              (0.0, -0.70, -0.50)), ipf,
+                       _mix(C_ANTIMAT, C_PYLON, 0.4), "ion pump"))
+    vmv, vmf = _pipe_path([(-0.33, -0.62, -0.33), (0.0, -0.68, -0.45),
+                           (0.33, -0.62, -0.33)], 0.012, seg=6,
+                          closed=False)
+    meshes.append(Mesh(vmv, vmf, _mix(C_ANTIMAT, C_HULL_DARK, 0.4),
+                       "vacuum manifold"))
+    # pass X: the manifold gets a gauge -- UHV without a readout is blind
+    vgv, vgf = _solid_cylinder(0.018, -0.01, 0.01, seg=8)
+    meshes.append(Mesh(_xform(vgv, rot_x(-math.pi / 2),
+                              (0.0, -0.63, -0.42)), vgf,
+                       _mix(C_TEXT, C_ANTIMAT, 0.4), "vacuum gauge"))
+    for sx in (-1, 1):                       # feed collars on the necks
+        fcv, fcf = _annulus_cylinder(0.035, 0.024, -0.008, 0.008, seg=8)
+        meshes.append(Mesh(_xform(fcv, rot_x(math.pi / 2),
+                                  (sx * 0.35, -0.465, -0.30)), fcf,
+                           C_PYLON, "feed collar" if sx > 0 else ""))
+    for sx in (-1, 1):                       # HV insulators where the leads
+        ibv, ibf = _annulus_cylinder(0.025, 0.015, -0.008, 0.008, seg=8)
+        meshes.append(Mesh(_xform(ibv, rot_y(math.pi / 2),
+                                  (sx * 0.28, -0.58, -0.30)), ibf,
+                           _mix(C_ANTIMAT, C_PYLON, 0.5),
+                           "insulator" if sx > 0 else ""))
+    # ---- detail pass VII: dewar insulation bands on the bottles ------------
+    for sx in (-1, 1):
+        dwv, dwf = _torus(0.118, 0.015, seg_major=16, seg_minor=6)
+        meshes.append(Mesh(_xform(dwv, rot_x(math.pi / 2),
+                                  (sx * 0.35, -0.58, -0.30)), dwf,
+                           _mix(C_ANTIMAT, C_RCS, 0.3),
+                           "dewar band" if sx > 0 else ""))
+    # ---- detail pass XI: the bottles sit on mounts, not the floor pan -----
+    for sx in (-1, 1):
+        tmv, tmf = _box(sx * 0.35, -0.70, -0.30, 0.10, 0.06, 0.10)
+        meshes.append(Mesh(tmv, tmf, _mix(C_PYLON, C_ANTIMAT, 0.3),
+                           "trap mount" if sx > 0 else ""))
     parts.append(Part(
         "traps", "PENNING BOTTLES (x2, floor)", meshes,
         ["Two palm-size Penning traps under the floor pan -- the exotic fuel",
@@ -7452,6 +8850,26 @@ def _build_special_parts_impl():
             bv3, bf3 = _box(sx * 0.99, y + 0.16, z, 0.05, 0.12, 0.30)
             meshes.append(Mesh(bv3, bf3, C_CASIMIR,
                                "strip %d" % (i + 1) if i % 5 == 0 else ""))
+            # detail pass IV: harness drop from each strip to the underbody
+            hlv2, hlf2 = _rod((sx * 0.97, y + 0.10, z),
+                              (sx * 0.88, -0.35, z), 0.008, seg=6)
+            meshes.append(Mesh(hlv2, hlf2,
+                               _mix(C_CASIMIR, C_HULL_DARK, 0.5), ""))
+            # pass V: connector block at each strip's forward end
+            scv2, scf2 = _box(sx * 0.99, y + 0.16, z + 0.17,
+                              0.055, 0.05, 0.04)
+            meshes.append(Mesh(scv2, scf2, _mix(C_PYLON, C_CASIMIR, 0.4),
+                               "strip connector" if i == 0 else ""))
+            # pass VI: the feedthrough pin on each connector block
+            sfv, sff = _solid_cylinder(0.012, -0.01, 0.01, seg=6)
+            meshes.append(Mesh(_xform(sfv, None,
+                                      (sx * 0.99, y + 0.16, z + 0.21)),
+                               sff, C_PYLON, ""))
+    # pass X: the drops land on underfloor bus rails, not empty air
+    for sx in (-1, 1):
+        brv2, brf2 = _box(sx * 0.88, -0.36, 0.0, 0.04, 0.03, 3.40)
+        meshes.append(Mesh(brv2, brf2, _mix(C_CASIMIR, C_PYLON, 0.4),
+                           "strip bus" if sx > 0 else ""))
     parts.append(Part(
         "casimir", "CASIMIR STRIPS (%d, conduit liner)" % CAR_CASIMIR_STRIPS,
         meshes,
@@ -7474,6 +8892,24 @@ def _build_special_parts_impl():
         lv, lf = _box(0.0, deck_top(z) + 0.008, z, 1.04, 0.018, 0.075)
         meshes.append(Mesh(lv, lf, C_RADIATOR,
                            "louver bank" if i == 0 else "", hot=True))
+    # ---- detail pass II: header tanks at the ends of the bank -----------
+    for sx in (-1, 1):
+        lhv, lhf = _box(sx * 0.55, deck_top(-1.68) + 0.03, -1.68,
+                        0.06, 0.05, 0.50)
+        meshes.append(Mesh(lhv, lhf, _mix(C_RADIATOR, C_PYLON, 0.3),
+                           "louver header" if sx > 0 else ""))
+    # ---- detail pass V: the bank actuates -- link rod header -> louvers --
+    lav, laf = _rod((0.55, deck_top(-1.66) + 0.02, -1.66),
+                    (0.42, deck_top(-1.80) + 0.02, -1.80), 0.010, seg=6)
+    meshes.append(Mesh(lav, laf, _mix(C_PYLON, C_RADIATOR, 0.3),
+                       "louver actuator"))
+    # pass XI: pivot pins at the bank's ends
+    for sx in (-1, 1):
+        lpv, lpf = _solid_cylinder(0.012, -0.015, 0.015, seg=8)
+        meshes.append(Mesh(_xform(lpv, rot_y(math.pi / 2),
+                                  (sx * 0.48, deck_top(-1.78) + 0.02,
+                                   -1.78)), lpf, C_PYLON,
+                           "louver pivot" if sx > 0 else ""))
     parts.append(Part(
         "louvers", "WASTE-HEAT LOUVERS (rear deck)", meshes,
         ["The rear louver bank every coupe wore is here working for a living:",
@@ -7493,6 +8929,23 @@ def _build_special_parts_impl():
     tv, tf = _sphere(0.035, seg=8, rings=6)
     meshes.append(Mesh(_xform(tv, None, (0.35, 1.41, -0.42)), tf,
                        C_COLLECT, ""))
+    # ---- detail pass II: insulator ring + coax feed down the A-pillar ---
+    iv9, if9 = _annulus_cylinder(0.05, 0.03, -0.015, 0.015, seg=12)
+    meshes.append(Mesh(_xform(iv9, rot_x(math.pi / 2),
+                              (0.35, 0.895, -0.42)), if9,
+                       C_HULL_DARK, "whip insulator"))
+    rv9, rf9 = _rod((0.35, 0.87, -0.42), (0.30, 0.60, -0.30),
+                    0.006, seg=6)
+    meshes.append(Mesh(rv9, rf9, _mix(C_COLLECT, C_HULL_DARK, 0.4),
+                       "whip feed"))
+    # ---- detail pass V: cable clips + surge can on the feed --------------
+    for cy in (0.74, 0.66):                    # the feed is clipped twice
+        ccv, ccf = _box(0.335, cy, -0.385, 0.02, 0.02, 0.02)
+        meshes.append(Mesh(ccv, ccf, C_PYLON,
+                           "cable clip" if cy == 0.74 else ""))
+    scv3, scf3 = _solid_cylinder(0.02, -0.02, 0.02, seg=8)   # surge can
+    meshes.append(Mesh(_xform(scv3, None, (0.35, 0.80, -0.42)), scf3,
+                       _mix(C_COLLECT, C_PYLON, 0.4), "surge can"))
     parts.append(Part(
         "rectenna", "ROOF RECTENNA WHIP", meshes,
         ["The little whip on the roof is a car-scale boost rectenna -- the",
@@ -7506,6 +8959,24 @@ def _build_special_parts_impl():
     meshes = []
     dv, df = _box(0.0, 0.16, 2.19, 1.30, 0.045, 0.07)
     meshes.append(Mesh(dv, df, C_DEFLECT, "forward deflector strip"))
+    # ---- detail pass III: emitter cells + feed drops --------------------
+    for ex in (-0.39, -0.13, 0.13, 0.39):      # ribs split the strip
+        ecv, ecf = _box(ex, 0.16, 2.228, 0.02, 0.045, 0.015)
+        meshes.append(Mesh(ecv, ecf, _mix(C_DEFLECT, C_HULL_DARK, 0.45),
+                           "emitter cell" if ex == -0.13 else ""))
+    for sx in (-1, 1):                          # feed drops to the nose
+        fdv, fdf = _rod((sx * 0.45, 0.14, 2.16),
+                        (sx * 0.45, -0.30, 2.02), 0.010, seg=6)
+        meshes.append(Mesh(fdv, fdf, _mix(C_DEFLECT, C_PYLON, 0.4), ""))
+    # ---- detail pass IV: the strip's driver module under the nose -------
+    dmvv, dmvf = _box(0.0, -0.25, 2.05, 0.20, 0.08, 0.12)
+    meshes.append(Mesh(dmvv, dmvf, _mix(C_DEFLECT, C_HULL_DARK, 0.5),
+                       "deflector driver"))
+    # ---- detail pass V: junctions where the feed drops land --------------
+    for sx in (-1, 1):
+        fjv, fjf = _box(sx * 0.45, -0.28, 2.02, 0.06, 0.05, 0.05)
+        meshes.append(Mesh(fjv, fjf, _mix(C_DEFLECT, C_PYLON, 0.35),
+                           "feed junction" if sx > 0 else ""))
     parts.append(Part(
         "deflector", "FORWARD DEFLECTOR STRIP (nose)", meshes,
         ["The thin bright bar across the nose is the navigational deflector:",
@@ -7536,6 +9007,32 @@ def _build_special_parts_impl():
         hv, hf = _rod((sx * 0.82, -0.25, -1.72), (sx * 0.84, -0.08, -1.92),
                       0.018, seg=8)
         meshes.append(Mesh(hv, hf, C_PYLON, ""))
+    # ---- detail pass III: wall sensor pods ride the hoop tops -----------
+    spv2, spf2 = _box(0.0, 0.38, 2.02, 0.06, 0.05, 0.06)
+    meshes.append(Mesh(spv2, spf2, _mix(C_COIL, C_ACCENT, 0.3),
+                       "field probe"))
+    spv3, spf3 = _box(0.0, 0.55, -1.92, 0.06, 0.05, 0.06)
+    meshes.append(Mesh(spv3, spf3, _mix(C_COIL, C_ACCENT, 0.3), ""))
+    # ---- detail pass IV: trim tabs fine-tune the wall at the sides ------
+    for sx in (-1, 1):
+        tbv2, tbf2 = _box(sx * 0.87, -0.07, 2.02, 0.06, 0.07, 0.05)
+        meshes.append(Mesh(tbv2, tbf2, _mix(C_COIL, C_PYLON, 0.35),
+                           "trim tab" if sx > 0 else ""))
+        tbv3, tbf3 = _box(sx * 0.90, -0.02, -1.92, 0.06, 0.07, 0.05)
+        meshes.append(Mesh(tbv3, tbf3, _mix(C_COIL, C_PYLON, 0.35), ""))
+    # ---- detail pass V: hoop mount bearings at the strut roots -----------
+    for bx, by, bz in ((0.80, -0.30, 1.85), (-0.80, -0.30, 1.85),
+                       (0.82, -0.25, -1.72), (-0.82, -0.25, -1.72)):
+        hbv3, hbf3 = _solid_cylinder(0.025, -0.02, 0.02, seg=8)
+        meshes.append(Mesh(_xform(hbv3, rot_y(math.pi / 2),
+                                  (bx, by, bz)), hbf3, C_PYLON,
+                           "hoop bearing" if (bx > 0 and bz > 0) else ""))
+    # ---- detail pass X: fairings where the struts meet the body -----------
+    for fx, fy, fz in ((0.80, -0.30, 1.85), (-0.80, -0.30, 1.85),
+                       (0.82, -0.25, -1.72), (-0.82, -0.25, -1.72)):
+        hfv, hff = _box(fx, fy, fz, 0.08, 0.10, 0.12)
+        meshes.append(Mesh(hfv, hff, _mix(C_HULL, C_COIL, 0.3),
+                           "hoop fairing" if (fx > 0 and fz > 0) else ""))
     parts.append(Part(
         "hoops", "SHAPING HOOPS  (fore + aft)", meshes,
         ["The ship's fore and aft cap rings pinch the bubble closed at its",
@@ -7546,9 +9043,10 @@ def _build_special_parts_impl():
          "  carry the share of the wall the beltline run can't reach."],
         nextord(), (0.0, 0.0, 0.0), C_COIL))
 
-    # ------------------------------------------ 12. FLUX CAPACITOR (prop)
-    # On the rear bulkhead behind the seats, exactly where the film put it --
-    # lit, visible through the open greenhouse, and connected to nothing.
+    # ------------------------------------ 12. FIELD TRANSITION SEQUENCER
+    # The Y-manifold on the rear bulkhead behind the seats, visible through
+    # the open greenhouse: it fans the transition pulse from the SMES out to
+    # the three field conduit runs -- a real distribution node, not a lamp.
     meshes = []
     cv, cf = _sphere(0.05, seg=10, rings=7)
     meshes.append(Mesh(_xform(cv, None, (0.0, 0.58, -0.585)), cf,
@@ -7557,50 +9055,62 @@ def _build_special_parts_impl():
     for dx, dy in ((0.0, 0.17), (-0.15, -0.11), (0.15, -0.11)):
         av, af = _rod(hub, hub + np.array([dx, dy, 0.0]), 0.016, seg=8)
         meshes.append(Mesh(av, af, _mix(C_EXOTIC, C_HULL, 0.4), ""))
-    # the time circuits sit next to it -- three LED faces on the dash rim,
-    # just as much a prop as the Y itself (the EPHEMERIS UNIT is the real
-    # clock aboard)
+    # the run sequencer: three indicator faces on the dash rim showing
+    # channel state -- armed, charged, transitioning
     for i, tc in enumerate((C_BAD, C_COLLECT, C_BUBBLE)):
         tv2, tf2 = _box(-0.20 + 0.20 * i, 0.495, 0.415, 0.16, 0.015, 0.05)
         meshes.append(Mesh(tv2, tf2, _mix(tc, C_HULL_DARK, 0.5),
-                           "time circuits" if i == 1 else ""))
-    # the TFC switch on the dash -- the big lever the film's driver flips;
-    # here it arms nothing (the real arming is the 88 mph interlock), kept
-    # because the homage is incomplete without it
+                           "run sequencer" if i == 1 else ""))
+    # the arming lever on the dash -- the physical enable for the
+    # transition interlock chain
     sv4, sf4 = _rod((0.34, 0.44, 0.36), (0.34, 0.55, 0.30), 0.014, seg=8)
-    meshes.append(Mesh(sv4, sf4, _mix(C_BAD, C_HULL, 0.35), "TFC switch"))
+    meshes.append(Mesh(sv4, sf4, _mix(C_BAD, C_HULL, 0.35), "arming lever"))
     hv2, hf2 = _sphere(0.022, seg=8, rings=6)
     meshes.append(Mesh(_xform(hv2, None, (0.34, 0.55, 0.30)),
                        hf2, _mix(C_BAD, C_HULL, 0.35), ""))
-    # destination keypad on the console -- a prop keypad beside the real
-    # selector, wired to the time-circuit display and nothing else
+    # mission keypad on the console -- the operator entry for the
+    # ephemeris unit's destination array
     kv, kf = _box(0.0, 0.205, 0.10, 0.14, 0.02, 0.18)
     meshes.append(Mesh(kv, kf, _mix(C_ACCENT, C_HULL_DARK, 0.6),
-                       "keypad (prop)"))
-    # the lightning hook, folded on the rear deck: the film's contact pole
-    # that caught the clock-tower charge -- a show piece; this car charges
-    # through the shore port, not a lightning strike
+                       "mission keypad"))
+    # the service ground hook, folded on the rear deck: drains residual
+    # shell charge to earth before the crew touches the field run
     lv3, lf3 = _rod((0.55, 0.58, -1.85), (0.55, 0.80, -2.05), 0.014, seg=8)
-    meshes.append(Mesh(lv3, lf3, C_PYLON, "lightning hook (prop)"))
+    meshes.append(Mesh(lv3, lf3, C_PYLON, "service ground hook"))
     hv3, hf3 = _torus(0.05, 0.012, seg_major=10, seg_minor=5,
                       a0=-math.pi / 2, a1=math.pi / 2, closed=False)
     meshes.append(Mesh(_xform(hv3, rot_y(math.pi / 2),
                               (0.55, 0.82, -2.06)), hf3, C_PYLON, ""))
+    # ---- detail pass V: the sequencer harness down the bulkhead ----------
+    # a thin lo-voltage harness runs down the bulkhead to the sequencer's
+    # own fuse -- powers the node and its panel feed
+    phv, phf = _pipe_path([(0.0, 0.55, -0.60), (0.10, 0.40, -0.615),
+                           (0.10, 0.05, -0.60)], 0.008, seg=6, closed=False)
+    meshes.append(Mesh(phv, phf, _mix(C_EXOTIC, C_HULL_DARK, 0.5),
+                       "sequencer harness"))
+    pfv, pff = _box(0.15, 0.35, -0.592, 0.08, 0.05, 0.03)
+    meshes.append(Mesh(pfv, pff, _mix(C_EXOTIC, C_PYLON, 0.4),
+                       "sequencer fuse"))
+    # pass XI: sockets at the three arm roots on the Y hub
+    for sa, sb in ((-0.16, 0.44), (0.16, 0.44), (0.0, 0.78)):
+        ysv, ysf = _box(sa, sb, -0.59, 0.05, 0.05, 0.03)
+        meshes.append(Mesh(ysv, ysf, _mix(C_EXOTIC, C_PYLON, 0.4),
+                           "Y socket" if sb > 0.5 else ""))
     parts.append(Part(
-        "fluxcap", "FLUX CAPACITOR  (for show)", meshes,
-        ["The glowing Y on the bulkhead behind the seats. FOR SHOW ONLY --",
-         "  it is wired to nothing heavier than an LED.",
-         "  The brief was explicit: keep the icon, lose the fiction.",
-         "The three-colour strip on the dash rim is the time-circuit",
-         "  display -- same prop status as the Y. The real clock is the",
-         "  ephemeris unit beside it, which keeps sidereal phase.",
-         "The console keypad, the dash TFC lever and the folded lightning",
-         "  hook on the rear deck are props too: the hook is the film's",
-         "  clock-tower contact pole -- this car charges through the shore",
-         "  port, not a 1.21 GW lightning strike.",
-         "Everything that actually moves spacetime is under the hood, the",
-         "  trunk, the floor and the beltline -- the parts with real spec",
-         "  cards in this list."],
+        "fluxcap", "FIELD TRANSITION SEQUENCER", meshes,
+        ["The glowing Y-manifold on the bulkhead behind the seats: it",
+         "  fans the transition pulse out of the SMES into the three",
+         "  field conduit arms -- a distribution node, not a lamp.",
+         "The three-colour strip on the dash rim is the run sequencer",
+         "  display: armed, charged, transitioning. The ephemeris unit",
+         "  beside it keeps sidereal phase for the aim solve.",
+         "The console mission keypad enters the destination array; the",
+         "  dash lever is the physical arming interlock; the folded",
+         "  ground hook on the rear deck drains residual shell charge",
+         "  to earth before the crew touches the field run.",
+         "Everything that moves spacetime is under the hood, the trunk,",
+         "  the floor and the beltline -- the parts with spec cards in",
+         "  this list."],
         nextord(), (0.0, 0.9, -0.5), C_EXOTIC))
 
     # ----------------------------------------------------- 12. WARP SHELL
@@ -7614,7 +9124,7 @@ def _build_special_parts_impl():
          "The trigger: the field transition is ARMED at %.0f mph (%.1f m/s)"
          % (CAR_TRIGGER_MPH, car_trigger_v()),
          "  -- an activation threshold, not physics. The bubble could in",
-         "  principle fire at a standstill; 88 is the homage, and the run-up",
+         "  principle fire at a standstill; 88 is the armed setpoint, and",
          "  is how you build the nerve to press it.",
          "Exotic bill at this radius: %s (%s)."
          % (fmt_energy(need), fmt_mass(need / C_LIGHT ** 2)),
@@ -7641,6 +9151,40 @@ def _build_special_parts_impl():
     rv5, rf5 = _rod((0.30, -0.52, -1.80), (0.52, -0.44, -2.10),
                     0.02, seg=8)
     meshes.append(Mesh(rv5, rf5, C_PYLON, ""))
+    # ---- detail pass II: stow hinges on the tail corners ------------------
+    for sx in (-1, 1):
+        mhv, mhf = _box(sx * 0.48, -0.46, -2.16, 0.08, 0.08, 0.08)
+        meshes.append(Mesh(mhv, mhf, C_PYLON,
+                           "loop hinge" if sx > 0 else ""))
+    # ---- detail pass III: deploy actuator + the KE return line ----------
+    dav, daf = _rod((0.0, -0.56, -1.95), (0.0, -0.46, -2.14),
+                    0.022, seg=8)
+    meshes.append(Mesh(dav, daf, _mix(C_PYLON, C_COLLECT, 0.25),
+                       "loop actuator"))
+    # the recovered megajoules need a way home: return line underbody,
+    # loop -> SMES bus -- regen with nowhere to put it is just braking
+    krv, krf = _pipe_path([(0.0, -0.44, -2.10), (0.30, -0.68, -1.20),
+                           (0.30, -0.66, 0.70), (0.12, -0.05, 1.32)],
+                          0.014, seg=8, closed=False)
+    meshes.append(Mesh(krv, krf, _mix(C_COLLECT, C_COIL, 0.35),
+                       "KE return line"))
+    # ---- detail pass V: stow latch + release pin --------------------------
+    dlv2, dlf2 = _box(0.0, -0.52, -2.10, 0.06, 0.05, 0.06)
+    meshes.append(Mesh(dlv2, dlf2, _mix(C_PYLON, C_COLLECT, 0.3),
+                       "deploy latch"))
+    dpn, dpnf = _rod((0.0, -0.52, -2.10), (0.0, -0.56, -2.14),
+                     0.008, seg=6)
+    meshes.append(Mesh(dpn, dpnf, _mix(C_WARN, C_PYLON, 0.3), ""))
+    # ---- detail pass VI: loop current leads at the hinges ----------------
+    for sx in (-1, 1):
+        lcv, lcf = _rod((sx * 0.48, -0.46, -2.16),
+                        (sx * 0.44, -0.44, -2.18), 0.012, seg=6)
+        meshes.append(Mesh(lcv, lcf, _mix(C_COLLECT, C_PYLON, 0.3),
+                           "loop lead" if sx > 0 else ""))
+    # pass XI: a restraint strap holds the loop against its latch
+    ssv, ssf = _box(0.0, -0.40, -2.12, 0.30, 0.02, 0.05)
+    meshes.append(Mesh(ssv, ssf, _mix(C_HULL_DARK, C_WARN, 0.3),
+                       "stow strap"))
     parts.append(Part(
         "magsail", "KE-RECOVERY LOOP  (tail, stowed)", meshes,
         ["The ship brakes on a %s magnetic sail; a car-scale frame carries"
@@ -7671,6 +9215,53 @@ def _build_special_parts_impl():
                            (0.0, -0.76, -0.60)], 0.018, seg=8, closed=False)
     meshes.append(Mesh(pv1, pf1, _mix(C_RCS, C_BUBBLE, 0.3),
                        "bottle cold line"))
+    # ---- detail pass II: compressor, header bottle, and the third leg --
+    # the microtorus magnets superconduct too -- a cold line climbs to it
+    cplv, cplf = _solid_cylinder(0.07, -0.10, 0.10, seg=10)
+    meshes.append(Mesh(_xform(cplv, rot_x(math.pi / 2),
+                              (-0.28, -0.76, 0.40)), cplf,
+                       _mix(C_RCS, C_HULL, 0.45), "compressor"))
+    hbv, hbf = _solid_cylinder(0.05, -0.08, 0.08, seg=10)
+    meshes.append(Mesh(_xform(hbv, rot_x(math.pi / 2),
+                              (0.26, -0.76, 0.40)), hbf,
+                       _mix(C_RCS, C_HULL, 0.3), "He header"))
+    pv9, pf9 = _pipe_path([(-0.02, -0.76, 0.40), (-0.15, -0.62, -0.40),
+                           (-0.10, 0.10, -1.20), (0.0, 0.36, -1.45)],
+                          0.014, seg=8, closed=False)
+    meshes.append(Mesh(pv9, pf9, _mix(C_RCS, C_BUBBLE, 0.3),
+                       "cell cold line"))
+    # ---- detail pass III: service block + relief vent -------------------
+    svb, svbf = _box(0.0, -0.72, 0.70, 0.16, 0.10, 0.10)
+    meshes.append(Mesh(svb, svbf, _mix(C_RCS, C_PYLON, 0.4),
+                       "service block"))
+    rlv2, rlf2 = _rod((0.0, -0.74, 0.66), (0.0, -0.80, 0.60),
+                      0.008, seg=6)
+    meshes.append(Mesh(rlv2, rlf2, _mix(C_RCS, C_HULL, 0.3),
+                       "relief vent"))
+    # ---- detail pass IV: expansion tank + line fill valves ---------------
+    exv, exf = _solid_cylinder(0.05, -0.07, 0.07, seg=10)
+    meshes.append(Mesh(_xform(exv, rot_x(math.pi / 2),
+                              (0.15, -0.70, 0.55)), exf,
+                       _mix(C_RCS, C_HULL, 0.35), "expansion tank"))
+    for vv in ((-0.10, -0.775, 0.65), (0.10, -0.775, -0.10)):
+        fvv2, fvf2 = _solid_cylinder(0.015, -0.02, 0.02, seg=8)
+        meshes.append(Mesh(_xform(fvv2, None, vv), fvf2, C_PYLON,
+                           "fill valve" if vv[2] > 0 else ""))
+    # ---- detail pass V: line clamps hold the runs to the floor pan -------
+    for cx2, cy2, cz2 in ((0.10, -0.77, -0.05), (-0.10, -0.76, 0.65),
+                          (-0.12, 0.05, -1.28)):
+        clv2, clf2 = _torus(0.028, 0.006, seg_major=10, seg_minor=5)
+        meshes.append(Mesh(_xform(clv2, None, (cx2, cy2, cz2)), clf2,
+                           C_PYLON, "line clamp" if cx2 > 0 else ""))
+    # ---- detail pass VI: vacuum-jacket coupling where the cell line lands --
+    vjv, vjf = _annulus_cylinder(0.032, 0.022, -0.012, 0.012, seg=10)
+    meshes.append(Mesh(_xform(vjv, rot_x(math.pi / 2),
+                              (0.0, 0.33, -1.43)), vjf,
+                       _mix(C_RCS, C_PYLON, 0.4), "VJ coupling"))
+    # ---- detail pass XI: the expansion tank's overflow runs to ground ------
+    ovh, ovhf = _pipe_path([(0.15, -0.70, 0.55), (0.15, -0.80, 0.60),
+                            (0.15, -0.90, 0.65)], 0.006, seg=6, closed=False)
+    meshes.append(Mesh(ovh, ovhf, C_HULL_DARK, "overflow hose"))
     parts.append(Part(
         "cryo", "CRYO LOOP  (underbody)", meshes,
         ["The ship bolts a cryoplant to the interior wall; the car carries",
@@ -7707,6 +9298,34 @@ def _build_special_parts_impl():
                         0.008, seg=6)
         meshes.append(Mesh(rv6, rf6, C_PYLON,
                            "fix antenna" if sx > 0 else ""))
+    # ---- detail pass II: the solve needs an attitude reference ----------
+    irv, irf = _box(0.0, -0.58, -0.15, 0.14, 0.06, 0.14)
+    meshes.append(Mesh(irv, irf, _mix(C_ACCENT, C_HULL_DARK, 0.5),
+                       "IRU"))                  # at the CG, where it belongs
+    for sx in (-1, 1):                       # coax drops antenna -> unit
+        cdv, cdf = _rod((sx * 0.30, 0.90, -0.42),
+                        (sx * 0.16, 0.55, -0.10), 0.005, seg=6)
+        meshes.append(Mesh(cdv, cdf, _mix(C_ACCENT, C_HULL_DARK, 0.5), ""))
+    # ---- detail pass III: star tracker -- the solve needs a sky fix -----
+    stkv, stkf = _solid_cylinder(0.03, -0.02, 0.07, seg=10)
+    meshes.append(Mesh(_xform(stkv, rot_x(-math.pi / 2),
+                              (0.0, 0.93, -0.42)), stkf, C_PYLON,
+                       "star tracker"))
+    sdv, sdf = _sphere(0.026, seg=10, rings=7)
+    meshes.append(Mesh(_xform(sdv, None, (0.0, 1.01, -0.42)), sdf,
+                       _mix(C_BUBBLE, C_TEXT, 0.4), ""))
+    # pass VII: the tracker sits on its ground plane
+    gpv, gpf = _solid_cylinder(0.05, -0.005, 0.005, seg=10)
+    meshes.append(Mesh(_xform(gpv, rot_x(math.pi / 2),
+                              (0.0, 0.905, -0.42)), gpf, C_PYLON,
+                       "ground plane"))
+    # ---- detail pass V: the diagnostic port the crew plugs into -----------
+    dpv2, dpf3 = _box(-0.20, 0.10, 0.48, 0.08, 0.05, 0.04)
+    meshes.append(Mesh(dpv2, dpf3, _mix(C_ACCENT, C_HULL_DARK, 0.5),
+                       "diagnostic port"))
+    dcv2, dcf2 = _rod((-0.20, 0.12, 0.48), (-0.16, 0.40, 0.30),
+                      0.005, seg=6)
+    meshes.append(Mesh(dcv2, dcf2, _mix(C_ACCENT, C_HULL_DARK, 0.5), ""))
     parts.append(Part(
         "nav", "EPHEMERIS UNIT  (dash)", meshes,
         ["The ship's navigator is a star catalogue and an inertial frame;",
@@ -7736,7 +9355,7 @@ def _build_special_parts_impl():
         nextord(), (0.0, 0.55, 0.30), C_ACCENT))
 
     # --------------------------------------- 16. TRANSITION TRAIL (the mark)
-    # The twin fire streaks the film paints behind the wheels. Here they are
+    # The twin scorch streaks the transition leaves behind the wheels -- the
     # the honest record of the event: the field-transition scars left on the
     # road when the bubble fires -- hidden until the run actually goes.
     meshes = []
@@ -7746,10 +9365,16 @@ def _build_special_parts_impl():
         meshes.append(Mesh(pts, [(0, 1), (1, 2), (2, 3)],
                            _mix(C_WARN, C_EXOTIC, 0.3),
                            "transition trail" if sx < 0 else "", wire=True))
+        # detail pass V: the hot core inside each streak
+        pts = [(sx, -0.924, -1.35), (sx * 1.00, -0.925, -2.20),
+               (sx * 1.05, -0.927, -2.95)]
+        meshes.append(Mesh(pts, [(0, 1), (1, 2)],
+                           _mix(C_TEXT, C_WARN, 0.5),
+                           "scorch core" if sx < 0 else "", wire=True))
     parts.append(Part(
         "trail", "TRANSITION TRAIL  (the mark)", meshes,
         ["The twin streaks left on the tarmac when the field transition",
-         "  fires -- the shape the homage draws on the road.",
+         "  fires -- the signature the transition leaves on the road.",
          "They are honest scars, not decals: they only exist after the",
          "  run has gone. Before 88 mph this part is hidden, because",
          "  physically there is nothing there yet.",
@@ -7784,6 +9409,76 @@ def _build_special_parts_impl():
         meshes.append(Mesh([(ex, gy + 0.002, -3.6), (ex, gy + 0.002, 3.6)],
                            [(0, 1)], _mix(C_TEXT, C_HULL_DARK, 0.5),
                            "edge line" if ex > 0 else "", wire=True))
+    # timing loops buried in the tarmac -- this is a measured run, so the
+    # strip carries the same inductive pair a drag strip would
+    for zl in (-2.70, -3.20):
+        pts = [(-0.60, gy + 0.004, zl - 0.10), (0.60, gy + 0.004, zl - 0.10),
+               (0.60, gy + 0.004, zl + 0.10), (-0.60, gy + 0.004, zl + 0.10)]
+        meshes.append(Mesh(pts, [(0, 1, 2, 3)],
+                           _mix(C_WARN, C_HULL_DARK, 0.5),
+                           "timing loop" if zl == -2.70 else "", wire=True))
+    tbx, tbxf = _box(1.95, gy + 0.05, -2.65, 0.15, 0.10, 0.08)
+    meshes.append(Mesh(tbx, tbxf, _mix(C_WARN, C_HULL_DARK, 0.3),
+                       "timing box"))
+    # ---- detail pass IV: the roadside crew gear --------------------------
+    for ex in (-2.30, 2.30):                 # shoulder edges outside lanes
+        meshes.append(Mesh([(ex, gy + 0.002, -3.6), (ex, gy + 0.002, 3.6)],
+                           [(0, 1)], _mix(C_TEXT, C_HULL_DARK, 0.35),
+                           "shoulder line" if ex > 0 else "", wire=True))
+    for sx in (-1, 1):                       # reflector posts at the loops
+        for zl in (-2.70, -3.20):
+            rpv, rpf = _box(sx * 2.05, gy + 0.17, zl, 0.06, 0.34, 0.06)
+            meshes.append(Mesh(rpv, rpf, _mix(C_WARN, C_TEXT, 0.3),
+                               "reflector post"
+                               if (sx > 0 and zl == -2.70) else ""))
+    # the "88" board marks the commit point -- past it the run cannot stop
+    mkv, mkf = _box(2.05, gy + 0.45, -3.35, 0.35, 0.25, 0.03)
+    meshes.append(Mesh(mkv, mkf, _mix(C_WARN, C_BAD, 0.25), "88 board"))
+    mkp, mkpf = _rod((2.05, gy, -3.35), (2.05, gy + 0.33, -3.35),
+                     0.025, seg=6)
+    meshes.append(Mesh(mkp, mkpf, C_PYLON, ""))
+    for cx in (-1.95, 1.95):                 # cones guarding the strip
+        cnv, cnf = _solid_cylinder(0.07, 0.0, 0.20, seg=10)
+        meshes.append(Mesh(_xform(cnv, rot_x(-math.pi / 2),
+                                  (cx, gy + 0.13, -3.45)), cnf,
+                           _mix(C_WARN, C_BAD, 0.35),
+                           "cone" if cx > 0 else ""))
+        ctv, ctf = _sphere(0.045, seg=8, rings=6)
+        meshes.append(Mesh(_xform(ctv, None, (cx, gy + 0.34, -3.45)),
+                           ctf, _mix(C_WARN, C_TEXT, 0.3), ""))
+    # ---- detail pass V: start line, tar repairs, marshal's box ------------
+    pts = [(-1.85, gy + 0.004, 2.50), (1.85, gy + 0.004, 2.50),
+           (1.85, gy + 0.004, 2.62), (-1.85, gy + 0.004, 2.62)]
+    meshes.append(Mesh(pts, [(0, 1, 2, 3)], _mix(C_TEXT, C_WARN, 0.4),
+                       "start line", wire=True))
+    for pts2 in ([(-0.4, gy + 0.004, -0.5), (-0.35, gy + 0.004, 0.3),
+                  (-0.45, gy + 0.004, 1.1)],
+                 [(0.9, gy + 0.004, -2.4), (0.95, gy + 0.004, -1.6),
+                  (0.85, gy + 0.004, -0.9)]):
+        meshes.append(Mesh(pts2, [(0, 1), (1, 2)],
+                           _mix(C_HULL_DARK, (0.02, 0.02, 0.03), 0.6),
+                           "tar repair" if pts2[0][0] < 0 else "",
+                           wire=True))
+    mbv, mbf = _box(1.95, gy + 0.10, 2.40, 0.18, 0.20, 0.12)
+    meshes.append(Mesh(mbv, mbf, _mix(C_WARN, C_HULL_DARK, 0.3),
+                       "marshal box"))
+    # ---- detail pass IX: cat's-eye studs on the lane lines -----------------
+    for cz in (-2.8, -2.0, -1.2, -0.4, 0.4, 1.2, 2.0, 2.8):
+        cev, cef = _box(0.0, gy + 0.015, cz, 0.05, 0.03, 0.03)
+        meshes.append(Mesh(cev, cef, _mix(C_WARN, C_TEXT, 0.4),
+                           "cat's eye" if cz == -0.4 else ""))
+    # pass XI: the crew's speed gun on its post, and a drain grate
+    sgp, sgpf = _rod((2.10, gy, 2.00), (2.10, gy + 0.45, 2.00),
+                     0.018, seg=6)
+    meshes.append(Mesh(sgp, sgpf, C_PYLON, ""))
+    sgb, sgbf = _box(2.10, gy + 0.50, 2.00, 0.10, 0.08, 0.14)
+    meshes.append(Mesh(sgb, sgbf, _mix(C_HULL_DARK, C_ACCENT, 0.3),
+                       "speed gun"))
+    pts = [(1.50, gy + 0.003, -0.50), (1.90, gy + 0.003, -0.50),
+           (1.90, gy + 0.003, -0.20), (1.50, gy + 0.003, -0.20)]
+    meshes.append(Mesh(pts, [(0, 1, 2, 3)],
+                       _mix(C_HULL_DARK, (0.02, 0.02, 0.03), 0.6),
+                       "drain grate", wire=True))
     parts.append(Part(
         "road", "RUN SURFACE  (tarmac)", meshes,
         ["The car is a road vehicle before it is a starship -- this slab",
@@ -10241,7 +11936,7 @@ def selftest():
           and _wv88[:, 1].min() < _sv[_sv[:, 1] >
                                       _wv88[:, 1].min()][:, 1].min(),
           "wheel bottoms at %.2f m" % _wv88[:, 1].min())
-    check("the homage trigger is exactly 88 mph",
+    check("the arming trigger is exactly 88 mph",
           abs(car_trigger_v() - 88.0 * 0.44704) < 1e-9,
           "%.5f m/s" % car_trigger_v())
     check("foldmobile exotic bill is negative and real",
@@ -10289,8 +11984,8 @@ def selftest():
           "parts sum %s + payload %s = %s"
           % (fmt_mass(sum(_pm88.values())), fmt_mass(_payload),
              fmt_mass(sum(_pm88.values()) + _payload)))
-    check("the flux capacitor is labelled FOR SHOW",
-          any("for show" in s.lower() or "show only" in s.lower()
+    check("the transition sequencer carries a real spec card",
+          any("sequencer" in s.lower() or "manifold" in s.lower()
               for s in _sby["fluxcap"].specs))
     _tk = 295.0
     for _ in range(2000):                      # ~500 s of parked idle
@@ -10481,38 +12176,103 @@ def selftest():
           "%.1fh at departure, %.1fh at the same pavement half a year on"
           % (_sd, _sa))
     _snames = {m.name for pp in sparts for m in pp.meshes}
+    _car_kit = {"steering wheel", "steering column", "windshield",
+                "rear glass", "registration plate", "centre console",
+                "upper arm", "lower arm", "run sequencer", "driver",
+                "pedals", "drive selector", "seatbelt", "sail louver",
+                "air dam", "field driver", "charge port", "door trim",
+                "glovebox", "parking brake", "dome light", "diffuser",
+                "sill plate", "door strut", "front plate", "arming lever",
+                "mission keypad", "service ground hook", "edge line",
+                "fire extinguisher", "gauge", "radio stack",
+                "windshield header", "plate lamp", "whip base",
+                "roof spine", "door hinge", "toll window", "seat back",
+                "parcel shelf", "speedo dial", "88 needle",
+                "mirror glass", "aux battery", "cabin heat exchanger",
+                "undertray", "tow eye", "DELOREAN letters",
+                "tire", "rim", "hub cap", "damper", "steering rack",
+                "RCS bottle", "junction", "main feed", "field controller",
+                "He-3 feed", "louver feed", "bus box", "trap collar",
+                "trap feed", "louver header", "whip insulator",
+                "whip feed", "loop hinge", "compressor", "He header",
+                "cell cold line", "IRU",
+                "column stalk", "ignition", "boost dial", "dead pedal",
+                "seat rail", "buckle", "belt anchor", "lock pin",
+                "door speaker", "hazard", "roll bar", "frame rail",
+                "crush can", "grille slat", "windshield gasket",
+                "trunk floor", "gutter rail", "fire bottle",
+                "onboard charger", "transition strobe", "valve",
+                "encoder", "torus coil", "shadow shield",
+                "He-3 regulator", "DC bus out", "cryostat ring",
+                "quench vent", "emitter cell", "field probe",
+                "loop actuator", "KE return line", "service block",
+                "relief vent", "star tracker", "timing loop",
+                "timing box",
+                "glovebox lock", "floor mat", "trunk light",
+                "frunk light", "deck spoiler", "reverse lamp",
+                "radio mast", "washer hose", "wiper motor",
+                "column shell", "pedal pad", "quadrant",
+                "courtesy lamp", "mirror joystick", "striker pin",
+                "sealed beam", "battery strap", "loom tray",
+                "HV cable", "hub connector", "balance weight",
+                "anti-roll bar", "FMU telltale", "driver heatsink",
+                "coolant port", "cell telltale", "bus cover",
+                "quench sensor", "ion pump", "vacuum manifold",
+                "feed collar", "strip connector", "louver actuator",
+                "cable clip", "surge can", "feed junction",
+                "hoop bearing", "sequencer harness", "sequencer fuse",
+                "deploy latch", "line clamp", "diagnostic port",
+                "start line", "tar repair", "marshal box",
+                "scorch core",
+                "pull strap", "shelf speaker", "demister grid",
+                "door seal", "antenna coax", "lift motor",
+                "crash foam", "horn", "hood hinge", "hood striker",
+                "hood release", "cowl intake", "heater core",
+                "battery cable", "battery ground", "access cover",
+                "trip knob", "console bin", "bulkhead panel",
+                "tool bag", "deck latch", "toe link", "ride sensor",
+                "hub duct", "fill port", "pressure gauge",
+                "charge line", "bus link", "insulator",
+                "loop lead", "VJ coupling", "coil terminal",
+                "steering shaft", "dash clock", "fire pull",
+                "throttle pot", "VIN plate", "inspection sticker",
+                "cap bolt", "warning triangle", "wheel chock",
+                "seat lever", "sill striker", "tread band",
+                "jacket band", "dewar band", "current sensor",
+                "ground plane",
+                "backbone", "rear subframe", "body mount",
+                "He-3 tank", "tank strap", "fuel sender", "tank feed",
+                "DC-DC converter", "motor controller", "headliner",
+                "mirror stem", "frunk tub", "hood rib", "bumperette",
+                "park brake cable", "washer pump", "harness strap",
+                "door lock", "tie-down", "ignition key",
+                "door glass", "release lever", "dash pad",
+                "dash speaker", "release handle", "deck release",
+                "heater tap", "flasher unit", "antenna amp",
+                "battery post", "inflator can", "cabin sensor",
+                "bump stop", "crossmember", "RCS solenoid",
+                "bottle strap", "post boot", "service valve",
+                "cat's eye",
+                "door handle", "check strap", "glass channel",
+                "intake duct", "wiper blade", "decklid seal",
+                "cabin filter", "face vent", "brake boot",
+                "ball joint", "rack boot", "sensor lead",
+                "cell base", "splice box", "vacuum gauge",
+                "strip bus", "hoop fairing", "jacket ring",
+                "decklid lock", "safety catch", "port release",
+                "lamp switch", "sail trim", "footwell duct",
+                "pedal arm", "trap mount", "fuel filter",
+                "cradle pad", "overflow hose", "junction clamp",
+                "Y socket", "louver pivot", "stow strap",
+                "speed gun", "drain grate"}
     check("the car still carries its car parts (controls, glass, kit)",
-          {"steering wheel", "steering column", "windshield",
-           "rear glass", "OUTATIME", "centre console",
-           "upper arm", "lower arm", "time circuits", "driver",
-           "pedals", "drive selector", "seatbelt", "sail louver",
-           "air dam", "field driver", "charge port", "door trim",
-           "glovebox", "parking brake", "dome light", "diffuser",
-           "sill plate", "door strut", "front plate", "TFC switch",
-           "keypad (prop)", "lightning hook (prop)", "edge line",
-           "fire extinguisher", "gauge", "radio stack",
-           "windshield header", "plate lamp", "whip base"}
-          <= _snames,
-          "missing: %s" % sorted({"steering wheel", "steering column",
-                                  "windshield", "rear glass", "OUTATIME",
-                                  "centre console", "upper arm",
-                                  "lower arm", "time circuits", "driver",
-                                  "pedals", "drive selector", "seatbelt",
-                                  "sail louver", "air dam", "field driver",
-                                  "charge port", "door trim", "glovebox",
-                                  "parking brake", "dome light", "diffuser",
-                                  "sill plate", "door strut", "front plate",
-                                  "TFC switch", "keypad (prop)",
-                                  "lightning hook (prop)", "edge line",
-                                  "fire extinguisher", "gauge",
-                                  "radio stack", "windshield header",
-                                  "plate lamp", "whip base"}
-                                 - _snames))
+          _car_kit <= _snames,
+          "missing: %s" % sorted(_car_kit - _snames))
     _isec = _info_sections()
     _ititles = [t for t, _b in _isec]
     check("the informational document explains the foldmobile and "
           "the same-road-spot solve",
-          any("FOLDMOBILE" in t for t in _ititles)
+          any("FOLDRUNNER" in t for t in _ititles)
           and any("SAME-ROAD-SPOT" in t for t in _ititles)
           and any("S(t)p" in ln or "S(t)p_road" in ln
                   for _t, _b in _isec for ln in _b),
@@ -13139,7 +14899,7 @@ def _info_sections():
                 fmt_energy(smes_store_j()),
                 fmt_energy(DIMS["amtraps"] * DIMS["amtrap_kg"]
                            * PLANT["am_energy_j_kg"])),
-            "Both are jokes against that bill, by twelve and eight orders of",
+            "Both are far short of that bill, by twelve and eight orders of",
             "magnitude. Nothing storable closes it. That is not a design flaw --",
             "it is true of every interstellar concept ever costed.",
             "",
@@ -14057,10 +15817,10 @@ def _info_sections():
                quantum_teleport_facts()["universe_ages"]),
             "universe. And you would still arrive at light speed at best.",
         ]),
-        ("20b. THE WD-88 FOLDMOBILE  (car-scale twin, SPECIAL WORKS tab)", [
+        ("20b. THE WD-88 FIELD CAR  (car-scale twin, SPECIAL WORKS tab)", [
             "Every WD-1 system folded into a 4.40 m stainless coupe that",
             "drives on a real road and fires its field transition at exactly",
-            "88 mph (%.2f m/s). The homage is the threshold; the systems are"
+            "88 mph (%.2f m/s). The arming speed is the threshold; systems are"
             % car_trigger_v(),
             "real downscales:",
             "",
@@ -16360,7 +18120,7 @@ class App:
         self.screen.blit(self.fm.render("SPECIAL WORKS", True, C_ACCENT),
                          (x + 12, y + 8))
         self.screen.blit(self.fs.render(
-            "WD-88 FOLDMOBILE -- the whole drive, car scale", True,
+            "WD-88 FIELD CAR -- the whole drive, car scale", True,
             C_TEXT_DIM), (x + 12, y + 30))
 
         # speedometer
@@ -16399,7 +18159,7 @@ class App:
              "car can't fit"),
             ("activation speed", "%.0f mph = %.1f m/s"
              % (CAR_TRIGGER_MPH, car_trigger_v())),
-            ("  (homage threshold -- armed, not physics)", ""),
+            ("  (arming threshold -- engineered, not physics)", ""),
             ("kerbside mass / KE", "%s / %s" % (
                 fmt_mass(CAR_MASS_KG),
                 fmt_energy(0.5 * CAR_MASS_KG * car_trigger_v() ** 2))),
@@ -16459,9 +18219,9 @@ class App:
         y3 = y2 + 70
         panel(self.screen, x, y3, w, 64)
         for li, ln in enumerate(
-                ("The cabin flux capacitor is FOR SHOW --",
+                ("The cabin sequencer drives the transition --",
                  "the bands, the trunk, the floor and the",
-                 "louvers are the real machine.")):
+                 "louvers are the working machine.")):
             self.screen.blit(self.fs.render(ln, True, C_TEXT_DIM),
                              (x + 12, y3 + 8 + li * 17))
 

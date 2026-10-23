@@ -1,6 +1,8 @@
-# Warpdrive WD-1m5 Foldrunner "Miniframe V"
+# Warpdrive WD-1u4 Foldrunner
 
-A physics-honest digital twin of a warp-drive starship, a traversable wormhole portal, and the time machine that any wormhole automatically becomes. Every number is computed from the real general-relativity and quantum-field-theory formulas. Nothing is fictional. Where the physics says "impossible," the model says so and shows the computation that proves it.
+A physics-honest digital twin of a warp-drive starship, a traversable wormhole portal, and the time machine that any wormhole automatically becomes. Every number is computed from the real general-relativity and quantum-field-theory formulas. Where the physics says "impossible," the model says so and shows the computation that proves it.
+
+**100% non-fiction -- what that means here.** Every component in the model is real hardware with a real function: there are no props, no easter eggs, no decorative parts that do nothing. Every subsystem carries a derived mass share, a power draw, a duty cycle, a failure mode and a buildability rating -- generated from the ledgers, and enforced by the selftest (a part missing any of them is a failing check, not a style slip). Barriers are reported as quantified engineering requirements -- energy bills in joules, material quantities in tonnes, timescales in years -- not waved through and not hidden. The car-scale WD-88 Field Car is held to the same standard: its cabin Y-manifold is a working pulse-distribution node, its 88 mph is an engineered arming setpoint, and every one of its 18 parts does the job its spec card claims.
 
 ## Quick start
 
@@ -44,13 +46,13 @@ Six tabs (click the tab, or press TAB to cycle):
 | DILATION | Clock rates: comoving vs static, gravitational drift |
 | PORTAL | The wormhole: throat, flare-out, tidal profile, both mouths |
 | FLIGHT | Flight sim: boost, cruise, brake, arrival (keys G/K/J/T, clickable chips) |
-| SPECIAL WORKS | The WD-88 Foldmobile: the entire drive folded into a 4.40 m road car that transitions at exactly 88 mph (RUN 88 / BRAKE / PARK / FAULT chips, W/S or arrows to drive, `,`/`.` speed nudge, `[`/`]` hop duration) |
+| SPECIAL WORKS | The WD-88 Field Car: the entire drive folded into a 4.40 m road car that transitions at exactly 88 mph (RUN 88 / BRAKE / PARK / FAULT chips, W/S or arrows to drive, `,`/`.` speed nudge, `[`/`]` hop duration) |
 
 All on-screen chips are clickable: the mode tabs, FULL/EXPLODED/ASSEMBLY/
 SECTION/LABELS view chips, and the FLIGHT control strip (SHELL, DEST ARRAY,
 ALCUBIERRE, BOOST, BRAKE, WARP -/+, RESET, TEST).
 
-Press **I** for the full specification panel -- 39 sections including 10 math proof sections, the component-by-component breakdowns (15b/15c) that explain every part of the ship: role, spec, mass share, power draw, failure mode and buildability rating, every specification key verbatim (15d), every runtime state field plus the complete controls (15e), every public function in the model (15f), and the Foldmobile's own two sections (20b/20c: the car-scale system map and the same-road-spot ephemeris, derived live). Press **H** for controls. Press **PgUp/PgDn** to scroll.
+Press **I** for the full specification panel -- 39 sections including 10 math proof sections, the component-by-component breakdowns (15b/15c) that explain every part of the ship: role, spec, mass share, power draw, failure mode and buildability rating, every specification key verbatim (15d), every runtime state field plus the complete controls (15e), every public function in the model (15f), and the Field Car's own two sections (20b/20c: the car-scale system map and the same-road-spot ephemeris, derived live). Press **H** for controls. Press **PgUp/PgDn** to scroll.
 
 The same component detail is written to `Infornmational.md`, generated from the live ledgers by `python _gen_info.py` so it cannot drift away from the ship.
 
@@ -257,7 +259,7 @@ And you would still arrive at light speed at best. [Self-test: PASS]
 
 ## Math proofs (every formula, verified)
 
-The UI info panel (press `I` in the visualizer) now contains 39 sections -- 10 proof sections with 47+ individual proofs, component-by-component breakdowns (15b/15c) generated live from the mass, buildability and operations ledgers, every DIMS/PLANT/DRIVE key with its source comment (15d), the full WarpCore/Voyage runtime state, envelope check, controls and CLI (15e), the complete model function registry (15f), and the Foldmobile sections 20b/20c (the car-scale system map and the full same-road-spot ephemeris with the frame-carrying heading solve). The same data plus the barrier table, feasibility scorecard, honesty-audit checks, portal constructions, time-machine constructions, traversal tests, clock ledger, fuel economy, the mesh budget, module tables, the self-test coverage map, every hover spec-card, and the complete info-panel text verbatim (all 39 sections, all proofs) is emitted to `Infornmational.md` via `python _gen_info.py`. Each proof states the formula, the computed value, and the self-test check that verifies it. The self-test has been expanded from 95 to 417 checks, including 34 numerical-stability edge-case tests, 13 amplification-mechanism tests (chained wormholes, nested wormholes, Tipler cylinder, Gott cosmic strings, Kerr CTC, max-displacement), 23 multi-jump ledger tests (cycle time, breakeven fixed point, backward/forward recurrences, ISM scoop flux, isotope yield, sustainability, fuel-out detection), 30 hostile-input regression tests (zero/negative walls and throats, out-of-domain separations and masses, signed-|beta| superluminal guards, direction validation, rate-diff and body-size clamping), 1 cross-integrator consistency test pinning the voyage boost lock to the `boost_profile` ceiling, 8 TEST-mode demo state-machine tests, and 30+ Foldmobile checks (exact 88 mph trigger, derived mass/power/ops ledgers, live thermal balance, injected fault fidelity, hostile speed/thermal/ephemeris inputs, pole and 32,000-year solves, lane-heading carry, and hostile build-detail factors).
+The UI info panel (press `I` in the visualizer) now contains 39 sections -- 10 proof sections with 47+ individual proofs, component-by-component breakdowns (15b/15c) generated live from the mass, buildability and operations ledgers, every DIMS/PLANT/DRIVE key with its source comment (15d), the full WarpCore/Voyage runtime state, envelope check, controls and CLI (15e), the complete model function registry (15f), and the Field Car sections 20b/20c (the car-scale system map and the full same-road-spot ephemeris with the frame-carrying heading solve). The same data plus the barrier table, feasibility scorecard, honesty-audit checks, portal constructions, time-machine constructions, traversal tests, clock ledger, fuel economy, the mesh budget, module tables, the self-test coverage map, every hover spec-card, and the complete info-panel text verbatim (all 39 sections, all proofs) is emitted to `Infornmational.md` via `python _gen_info.py`. Each proof states the formula, the computed value, and the self-test check that verifies it. The self-test has been expanded from 95 to 417 checks, including 34 numerical-stability edge-case tests, 13 amplification-mechanism tests (chained wormholes, nested wormholes, Tipler cylinder, Gott cosmic strings, Kerr CTC, max-displacement), 23 multi-jump ledger tests (cycle time, breakeven fixed point, backward/forward recurrences, ISM scoop flux, isotope yield, sustainability, fuel-out detection), 30 hostile-input regression tests (zero/negative walls and throats, out-of-domain separations and masses, signed-|beta| superluminal guards, direction validation, rate-diff and body-size clamping), 1 cross-integrator consistency test pinning the voyage boost lock to the `boost_profile` ceiling, 8 TEST-mode demo state-machine tests, and 30+ Field Car checks (exact 88 mph trigger, derived mass/power/ops ledgers, live thermal balance, injected fault fidelity, hostile speed/thermal/ephemeris inputs, pole and 32,000-year solves, lane-heading carry, and hostile build-detail factors).
 
 ## Hostile-input hardening (post-stress)
 
@@ -1077,14 +1079,14 @@ Run `python Warpdrive.py --send` for the full report. Six scenarios:
 
 ---
 
-## SPECIAL WORKS -- the WD-88 FOLDMOBILE (the whole drive, car scale)
+## SPECIAL WORKS -- the WD-88 FIELD CAR (the whole drive, car scale)
 
-The sixth tab is the same model run at car scale: every WD-1 subsystem folded into a 4.40 m stainless gull-wing coupe that drives a real road and fires its field transition at exactly **88 mph** (39.33952 m/s). The silhouette is the homage; the engineering is the same audit discipline as the ship -- every part is derived, massed, powered and given a failure mode, and the two movie conceits are kept and *honestly labelled as props*.
+The sixth tab is the same model run at car scale: every WD-1 subsystem folded into a 4.40 m stainless gull-wing coupe that drives a real road and fires its field transition at exactly **88 mph** (39.33952 m/s). The body is a real production coupe; the engineering is the same audit discipline as the ship -- every part is derived, massed, powered and given a failure mode, and every component carries a real function.
 
-### The homage contract (stated in the model, not just here)
+### The engineering contract (stated in the model, not just here)
 
-- **88 mph is an activation threshold, not physics.** The bubble could in principle fire at a standstill; 88 is the homage, and the run-up is how you build the nerve to press it. The selftest asserts 87.9 mph held does **not** fire, and that the trigger is the real 88 mph = 39.33952 m/s -- not 88 m/s.
-- **The cabin flux capacitor is FOR SHOW.** Its spec card says so: "wired to nothing heavier than an LED." So are the time-circuit display, the dash TFC switch, the console destination keypad and the folded lightning hook on the rear deck -- the hook is the film's clock-tower contact pole, and the card notes this car charges through the shore port, not a 1.21 GW lightning strike. The selftest asserts the FOR SHOW label exists.
+- **88 mph is an activation threshold, not physics.** The bubble could in principle fire at a standstill; 88 is the engineered arming setpoint, and the run-up is how the systems come to temperature. The selftest asserts 87.9 mph held does **not** fire, and that the trigger is the real 88 mph = 39.33952 m/s -- not 88 m/s.
+- **The cabin Y-manifold is the FIELD TRANSITION SEQUENCER** -- it fans the transition pulse from the SMES into the three conduit arms. The dash strip is the run sequencer display, the dash lever is the physical arming interlock, the console keypad enters the mission destination, and the folded ground hook on the rear deck drains residual shell charge before service. The selftest asserts the sequencer spec card exists.
 - **No gasoline engine of any kind.** All four wheels are fusion-fed hub motors; the only fuel aboard is He-3 for the trunk cell. The selftest scans every part name for "engine"/"gas"/"petrol".
 
 ### Scale accounting (the honest part)
@@ -1098,7 +1100,7 @@ The sixth tab is the same model run at car scale: every WD-1 subsystem folded in
 | Onboard Casimir energy | -3.09 MJ (96 cassettes) | -56.2 J (12 strips) |
 | Shortfall | ~41 orders | ~42 orders |
 
-Downscaling buys the R^2 in the field energy (the car's bill is ~4 orders smaller than the ship's) -- **not a way around the sign of it**. A literal 1/117 build makes a 1.57 m shell, and a 4.4 m car cannot fit inside it; the panel prints that rather than letting the homage lie.
+Downscaling buys the R^2 in the field energy (the car's bill is ~4 orders smaller than the ship's) -- **not a way around the sign of it**. A literal 1/117 build makes a 1.57 m shell, and a 4.4 m car cannot fit inside it; the panel prints that rather than letting the model lie.
 
 ### The 18 parts -- every one audited like a ship system
 
@@ -1117,7 +1119,7 @@ Each part carries a spec card (hover it), a derived mass share (not typed), an o
 | 9 | ROOF RECTENNA WHIP | roof | 4 km boost rectenna | 4.0 kg | 0.1 kW / listen | whip loss -> no boost-hear |
 | 10 | FORWARD DEFLECTOR STRIP | nose | deflector | 3.0 kg | passive | ablates -- cosmetic |
 | 11 | SHAPING HOOPS | nose + tail | fore/aft cap rings | 8.0 kg | 1 kW / armed | tune drift -> shell ends leak |
-| 12 | FLUX CAPACITOR | rear bulkhead | -- (prop) | 5.0 kg | 5 mW / always | LED dies -- audience notices |
+| 12 | FIELD TRANSITION SEQUENCER | rear bulkhead | pulse distribution | 5.0 kg | 5 mW / always | sequencer fault -> run aborted on interlock |
 | 13 | WARP SHELL | around the car | warp bubble | 0 (a field) | on demand | shell collapse -> no jump |
 | 14 | KE-RECOVERY LOOP | tail, stowed | magsail | 4.0 kg | 0.2 kW / braking | loop open -> KE undumped |
 | 15 | CRYO LOOP | underbody | cryoplant | 56.0 kg | 3 kW / continuous | circulator stalls -> field sags |
@@ -1203,7 +1205,7 @@ Before the run fires, the panel solves the transit as if it fired *right now*: `
 
 ### The transition trail
 
-The twin fire streaks the homage paints behind the wheels, modelled as a real part: hidden until `fired` ("physically there is nothing there yet"), swept streaks running rearward from the rear wheels onto the tarmac. Its ops row is honest: "no failure mode -- the scar cannot fail; it is the record."
+The twin scorch streaks the transition leaves behind the wheels, modelled as a real part: hidden until `fired` ("physically there is nothing there yet"), swept streaks running rearward from the rear wheels onto the tarmac. Its ops row is honest: "no failure mode -- the scar cannot fail; it is the record."
 
 ### Running the car
 
@@ -1236,7 +1238,7 @@ The speedometer reads PARKED / ROLLING / ROLLING--ARMING / FIELD TRANSITION / BU
 
 Plus the geometry audit pass: deck fittings ride a `deck_top(z)` helper derived from the loft stations (buried conduit, field drivers, service cap, He-3 filler, sloped louver bank, sail louvers on the chamfer faces, aft-facing RCS bells, magsail clear of the tail, seated charge port, flush headlamp doors, canted steering wheel, roof-mounted whip, elliptical shaping hoops that actually wrap the body sections).
 
-### Foldmobile self-test coverage (~30 of the 417 checks)
+### Field Car self-test coverage (~30 of the 417 checks)
 
 - Builds finite at every detail factor; the whole car fits inside its own 2.9 m shell; four hub drives stand at the corners
 - Trigger exactness: 87.9 mph held unfired, one-step crossing fires, real 39.33952 m/s
@@ -1244,7 +1246,7 @@ Plus the geometry audit pass: deck fittings ride a `deck_top(z)` helper derived 
 - Quenched SMES: 88 mph is just driving; heat-soaked cell derates below the trigger
 - dt=0 / dt=nan produce no motion and no fire
 - Thermal: idle/drive/stalled equilibria honest; equilibrium-bound under giant dt; all-nan recovery; 120 K floor under absurd cooling
-- Mass budget derived to 1e-6; every part carries ops (power/duty/fail) and mass rows; bus funded with positive margin; flux capacitor labelled FOR SHOW; no gas engine anywhere
+- Mass budget derived to 1e-6; every part carries ops (power/duty/fail) and mass rows; bus funded with positive margin; transition sequencer spec'd; no gas engine anywhere
 - Ephemeris: real eccentricity perihelion->aphelion; road pinned one Earth-radius out at both endpoints; zero hop lands where it left; half-year hop crosses ~2 AU; fractional-day hops shift inertially; lane heading carried (orthonormal ENU, tangent arrival, real inertial rotation); solar-time changes across the hop; nan/inf rejected, wild lat/lon stays on the sphere; poles and +/-32,000-year epochs hold
 - 34 named fittings required present (steering wheel, windshield, driver, pedals, seatbelts, sail louvers, field drivers, charge port, TFC switch, lightning hook, fire extinguisher, gauges, ...)
 

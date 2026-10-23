@@ -2,7 +2,9 @@
 
 ## What this is
 
-A physics-honest digital twin of a warp-drive starship, a traversable wormhole portal, the time machine that any wormhole automatically becomes -- and, in the SPECIAL WORKS tab, the same drive folded down to car scale as the WD-88 Foldmobile, a 4.40 m coupe that transitions at exactly 88 mph and solves the "same road, different place in space" problem with a live two-frame ephemeris. Every number is computed from real general-relativity and quantum-field-theory formulas. Nothing is fictional. Where the physics says "impossible," the model says so and shows the computation that proves it.
+A physics-honest digital twin of a warp-drive starship, a traversable wormhole portal, the time machine that any wormhole automatically becomes -- and, in the SPECIAL WORKS tab, the same drive folded down to car scale as the WD-88 Field Car, a 4.40 m coupe that transitions at exactly 88 mph and solves the "same road, different place in space" problem with a live two-frame ephemeris. Every number is computed from real general-relativity and quantum-field-theory formulas. Where the physics says "impossible," the model says so and shows the computation that proves it.
+
+**100% non-fiction, stated plainly.** No props, no homage parts, no decoration: every mesh in the model is functional hardware whose spec card describes a real job. Every billed component has a mass, a power draw, a duty cycle, a failure mode and a buildability rating -- all derived, all selftest-enforced. Barriers are quantified engineering gaps (the Alcubierre bill is printed in joules next to the onboard supply and the 41-order shortfall is stated, not hidden), not fictional workarounds. The Field Car runs the same discipline at road scale: real hub motors, a real fusion cell, a real transition sequencer, and an arming setpoint that is engineering, not physics.
 
 This is the seventh refit pass. Passes 1-5 (WD-1m through WD-1m5 "Miniframe V") progressively shrank the ship to 0.4586x linear -- mass down 87%, cruise speed up from 0.562c to 0.857c against an unchanged 100 PW beam. Pass 6 (WD-1u2) upscaled every component ~2x linear back to near-full scale (0.9172x, 125,416 t). Pass 7 (WD-1u4) upscales ~2x again to 1.8344x the original WD-1: every hull, ring, coil, radiator and mount dimension is the pass-6 value x 2.0; every component count was re-derived from the doubled geometry (96 ring sectors/coils, 12 decks, 12 pylons, 60 radiator panels, 16 cryo units, 32 RCS pods, 8 antimatter traps, 96 Casimir cassettes, crew 24); every wall/shell/skin thickness scaled x2 once more for structural similarity; and the external beam tap was re-specified at 6.4 EW (x8) to carry the ~8.6x heavier hull. Dry mass: 1,081,381 t -- the million-tonne ship, fully specified part by part. See `Engineering notes` below.
 
@@ -50,20 +52,20 @@ Every number here is re-verified by `--selftest` (417/417) after each change -- 
 | DILATION | 3 | Clock rates: comoving vs static, gravitational drift |
 | PORTAL | 4 | The wormhole: throat, flare-out, tidal profile, both mouths |
 | FLIGHT | 5 | Flight sim: boost, cruise, brake, arrival (keys G/K/J/T) |
-| SPECIAL WORKS | 6 | The WD-88 Foldmobile: the whole drive folded into a 4.40 m road car that fires its field transition at exactly 88 mph -- see below |
+| SPECIAL WORKS | 6 | The WD-88 Field Car: the whole drive folded into a 4.40 m road car that fires its field transition at exactly 88 mph -- see below |
 
-Press **I** for the full specification panel: 39 sections -- 10 math proof sections, component-by-component breakdowns (15b/15c) generated live from the mass, buildability and operations ledgers, every specification key verbatim (15d), the runtime state machines + controls (15e), the complete function registry (15f), and the Foldmobile's own sections 20b/20c (the car-scale system map and the same-road-spot ephemeris in full). The same per-component detail plus barriers, feasibility, honesty checks, portal constructions, time machines, traversal tests, clock ledger, fuel economy, the mesh budget, module tables, the self-test coverage map, every hover spec-card, and the entire 39-section panel text verbatim lives in `Infornmational.md` (regenerate with `python _gen_info.py`). Press **H** for controls.
+Press **I** for the full specification panel: 39 sections -- 10 math proof sections, component-by-component breakdowns (15b/15c) generated live from the mass, buildability and operations ledgers, every specification key verbatim (15d), the runtime state machines + controls (15e), the complete function registry (15f), and the Field Car's own sections 20b/20c (the car-scale system map and the same-road-spot ephemeris in full). The same per-component detail plus barriers, feasibility, honesty checks, portal constructions, time machines, traversal tests, clock ledger, fuel economy, the mesh budget, module tables, the self-test coverage map, every hover spec-card, and the entire 39-section panel text verbatim lives in `Infornmational.md` (regenerate with `python _gen_info.py`). Press **H** for controls.
 
-## The WD-88 Foldmobile -- the whole drive, car scale (SPECIAL WORKS)
+## The WD-88 Field Car -- the whole drive, car scale (SPECIAL WORKS)
 
-The sixth tab is the same model at car scale: every WD-1 subsystem folded into a 4.40 m stainless gull-wing coupe -- the silhouette is the homage -- that drives a real road on four fusion-fed hub motors and fires its field transition at exactly **88 mph (39.33952 m/s)**. It is not a skin or an easter egg: it is a second audited machine with its own mass budget, power budget, operations ledger, thermal model, fault-injection rig and ephemeris solver, held to the same rule as the ship -- where the physics says impossible, the model says so and shows the number.
+The sixth tab is the same model at car scale: every WD-1 subsystem folded into a 4.40 m stainless gull-wing coupe -- a real production coupe body -- that drives a real road on four fusion-fed hub motors and fires its field transition at exactly **88 mph (39.33952 m/s)**. It is not a skin or an easter egg: it is a second audited machine with its own mass budget, power budget, operations ledger, thermal model, fault-injection rig and ephemeris solver, held to the same rule as the ship -- where the physics says impossible, the model says so and shows the number.
 
 | Parameter | Value |
 |-----------|-------|
 | Kerbside mass | 1,410 kg -- derived, 25-line budget (parts 1,287 kg + crew/fluids/fit-out 122.9 kg); the driver is drawn because the budget books crew mass |
 | Bubble radius | 2.90 m -- the smallest shell that encloses the coupe, 1/63 the ship's 183.44 m (hull 1/28: 4.40 m vs 124.76 m) |
 | Wall thickness | 0.22 m (sigma = 4.5 /m) |
-| Activation speed | 88 mph exactly -- an homage threshold, not physics; 87.9 mph held does NOT fire (selftest-asserted) |
+| Activation speed | 88 mph exactly -- an engineered arming setpoint, not physics; 87.9 mph held does NOT fire (selftest-asserted) |
 | Top speed / derate | 130 mph ceiling; 55 mph when the cell is heat-soaked past 1,100 K |
 | Powerplant | 2.5 MW trunk fusion cell (D-3He microtorus) + 4 hub motors -- **no gasoline engine of any kind** |
 | Bus | 49 kW loads vs 2.5 MW supply -- margin +2.45 MW (a negative margin would fail the selftest) |
@@ -76,10 +78,10 @@ The sixth tab is the same model at car scale: every WD-1 subsystem folded into a
 
 hull -> stainless monocoque | ring + 96 coils -> beltline field conduit run | pylons -> conduit standoffs | fore/aft cap rings -> nose + tail shaping hoops (elliptical -- they actually wrap the body sections) | fusion reactor -> trunk micro cell | SMES -> hood puck | Penning traps -> two under-floor bottles | Casimir lattice -> 12 conduit-liner strips | radiators -> rear-deck louver bank | cryoplant -> underbody He loop | rectenna -> roof whip | deflector -> nose strip | RCS pods -> tail bells + the four hub drives | magsail -> KE-recovery loop at the tail | navigator -> dash ephemeris unit | warp bubble -> exact 2.9 m shell | *plus two parts the ship doesn't need: the TRANSITION TRAIL (the scars on the road, hidden until the run fires) and the RUN SURFACE (the tarmac itself).*
 
-### The homage contract
+### The engineering contract
 
-- **The flux capacitor is FOR SHOW** -- "wired to nothing heavier than an LED," per its own spec card. So are the time-circuit display, the TFC switch, the destination keypad and the folded lightning hook on the rear deck (the film's contact pole; this car charges through the shore port, not a 1.21 GW lightning strike). The selftest asserts the FOR SHOW label.
-- **88 is a threshold, not physics** -- the bubble could fire at a standstill; the run-up is how you build the nerve to press it.
+- **The Y-manifold is the FIELD TRANSITION SEQUENCER** -- it distributes the transition pulse from the SMES into the three conduit arms. The dash strip is the run sequencer display, the dash lever is the physical arming interlock, the console keypad enters the mission destination, and the folded ground hook on the rear deck drains residual shell charge before service. The selftest asserts the sequencer spec card.
+- **88 is a threshold, not physics** -- the bubble could fire at a standstill; the run-up is how the systems come to temperature.
 - **No gas engine** -- the selftest scans every part name for it.
 
 ### The same-road-spot solve (the reason the ephemeris unit exists)
@@ -211,7 +213,7 @@ Quantum teleportation is real (Bennett 1993, Micius satellite 2017, 1400 km). It
 | Portal/time-travel | 66/66 | 0 FAILURES |
 | Honesty layer | 12/12 | HONEST -- nothing created from nothing |
 | Draw paths | 7/7 | ALL OK |
-| Info panel sections | 39 | 10 math/barrier proof sections + component-by-component breakdowns (15b/15c/15d) + Foldmobile 20b/20c |
+| Info panel sections | 39 | 10 math/barrier proof sections + component-by-component breakdowns (15b/15c/15d) + Field Car 20b/20c |
 | Dimensional analysis | 28/28 | All units correct |
 | Cross-formula consistency | 11/11 | All agree |
 | Barrier analysis | 8/8 | All barriers verified |
@@ -221,7 +223,7 @@ Quantum teleportation is real (Bennett 1993, Micius satellite 2017, 1400 km). It
 
 | File | Purpose |
 |------|---------|
-| `Warpdrive.py` | The model (Python + Pygame, ~17,000 lines: ship + portal + time machine + the WD-88 Foldmobile) |
+| `Warpdrive.py` | The model (Python + Pygame, ~17,000 lines: ship + portal + time machine + the WD-88 Field Car) |
 | `README.md` | Full formulas, proofs, and computed values |
 | `overview.md` | This file -- what it is, what changed, why |
 | `howitworks.md` | Step-by-step walkthrough of the physics pipeline |
